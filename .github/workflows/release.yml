@@ -54,9 +54,6 @@ jobs:
           bash scripts/build-mosh-native.sh arm64-v8a
           ls -lh app/src/main/jniLibs/arm64-v8a/
 
-      # maple 发行变体内置字体（OFL，不入库）——构建 maple 变体前下载提取。
-      - name: Fetch Maple font (maple flavor)
-        run: bash scripts/fetch-maple-font.sh
 
       - name: Decode signing keystore
         env:
@@ -79,12 +76,13 @@ jobs:
             unzip -l "$APK" | grep -q "lib/arm64-v8a/libmosh-client.so" || { echo "❌ $APK 缺 libmosh-client.so"; exit 1; }
             unzip -l "$APK" | grep -q "lib/arm64-v8a/libtermux.so" || { echo "❌ $APK 缺 libtermux.so"; exit 1; }
           done
-          # release 构建会压缩资源路径（res/font/maple_mono.ttf → res/xx.ttf），故按体积判定：
-          # maple 内置字体约 20MB，是唯一 >15MB 的 ttf；standard 包无此项。
-          unzip -l app/build/outputs/apk/maple/release/app-maple-release.apk \
-            | awk '/\.ttf$/ && $1+0 > 15000000 {f=1} END{exit !f}' \
-            || { echo "❌ maple 包缺内置字体（未见 >15MB 的 ttf）"; exit 1; }
-          echo "✅ 两个变体 native 库已打包；maple 内置字体已打包"
+          # Both variants must contain the same bundled Maple Mono NF CN font (>15 MB).
+          for APK in app/build/outputs/apk/standard/release/app-standard-release.apk \
+                     app/build/outputs/apk/maple/release/app-maple-release.apk; do
+            unzip -l "$APK" | awk '/\.ttf$/ && $1+0 > 15000000 {f=1} END{exit !f}' \
+              || { echo "❌ $APK 缺内置 Maple 字体"; exit 1; }
+          done
+          echo "✅ 两个变体 native 库与 Maple 字体已打包"
 
       - name: Stage APKs
         run: |
@@ -122,15 +120,14 @@ jobs:
             ${{ steps.changelog.outputs.body }}
 
             ### 安装（两个包择一）
-            - `moke-${{ github.ref_name }}.apk` — 常规包，中文回退用内置思源黑体子集，体积小。
-            - `moke-${{ github.ref_name }}-maple.apk` — 自带 Maple Mono 并设为默认中文回退（开箱中英等宽），包更大。
+            - `moke-${{ github.ref_name }}.apk` / `moke-${{ github.ref_name }}-maple.apk` — 两包均内置 Maple Mono NF CN；保留两个名称以兼容旧版本升级。
 
             允许"安装未知来源应用"后安装（稳定签名，可覆盖升级）。
 
             ### 特性
             - 多会话，原生终端渲染（Apache-2.0 terminal-view 内核）
             - SSH（密码 / 私钥）+ mosh（UDP 漫游）
-            - 实时预览外观 · 多套配色 · 字体管理（主字体 + 中文回退）
+            - 实时预览外观 · 多套配色 · 内置 Maple Mono NF CN
             - 连接分组排序 · 双排附加键 · 文本段输入
 
             本版改动见 [CHANGELOG](https://github.com/ddwwbb/moke/blob/main/CHANGELOG.md)。

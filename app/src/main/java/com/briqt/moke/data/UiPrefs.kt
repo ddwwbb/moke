@@ -30,6 +30,15 @@ enum class KeyboardMode {
     }
 }
 
+/** Terminal extra-key toolbar preset; CUSTOM uses twelve persisted key IDs. */
+enum class ExtraKeysLayout {
+    DEFAULT, EDIT, FUNCTION, CONTROL, CUSTOM;
+
+    companion object {
+        fun fromName(name: String?): ExtraKeysLayout = entries.firstOrNull { it.name == name } ?: DEFAULT
+    }
+}
+
 /**
  * 全屏（备用屏）程序内的滑动语义。社区实报：codex / claude code / snow-cli 里上下滑动被当成
  * ↑/↓，翻的是命令历史而不是看输出。

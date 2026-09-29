@@ -196,6 +196,12 @@
     <string name="keys_section_edit">编辑</string>
     <string name="keys_section_fn">功能键</string>
     <string name="keys_section_ctrl">控制键</string>
+    <string name="keys_layout_default">默认</string>
+    <string name="keys_layout_custom">自定义</string>
+    <string name="keys_customize">编辑快捷键</string>
+    <string name="keys_custom_hint">为两排选择共 12 个按键；每排最右侧的动作键固定。</string>
+    <string name="keys_layout_title">快捷键布局</string>
+    <string name="keys_pick_slot">第 %1$d 个键 · 选择替换按键</string>
     <string name="composer_title">文本段输入</string>
     <string name="composer_field">要发送的内容</string>
     <string name="composer_clear">清空</string>
@@ -204,13 +210,10 @@
 
     <!-- 外观 -->
     <string name="section_font">字体</string>
+    <string name="font_maple_only">Maple Mono NF CN · 无微调 · 内置</string>
     <string name="section_typography">排版</string>
     <string name="section_colors">配色</string>
     <string name="section_cursor">光标</string>
-    <string name="primary_font">主字体</string>
-    <string name="fallback_font">中文 / 回退字体</string>
-    <string name="font_manage_title">字体管理</string>
-    <string name="font_manage_sub">下载更多字体 · 设置主字体 / 回退</string>
     <string name="line_spacing">行距</string>
     <string name="letter_spacing">字间距</string>
     <string name="color_scheme">配色方案</string>
@@ -219,24 +222,6 @@
     <string name="cursor_bar">竖线</string>
     <string name="cursor_blink">光标闪烁</string>
     <string name="reset_done">已恢复默认</string>
-    <string name="fallback_none">无（系统兜底）</string>
-
-    <!-- 字体能力标签 -->
-    <string name="tag_bundled">内置</string>
-    <string name="tag_local">本地</string>
-    <string name="tag_cjk">含中文</string>
-    <string name="tag_ligature">连字</string>
-
-    <!-- 字体管理 -->
-    <string name="fonts_title">字体</string>
-    <string name="fonts_desc">主字体决定 Latin 观感；回退字体补 Latin 缺失的字形（如中文）。选一款含中文的作回退，即可漂亮显示中文。</string>
-    <string name="font_upload">上传本地字体（TTF / OTF）</string>
-    <string name="font_importing">导入中…</string>
-    <string name="font_imported">已导入「%1$s」</string>
-    <string name="role_primary">主字体</string>
-    <string name="role_fallback">回退</string>
-    <string name="font_download">下载</string>
-    <string name="font_downloading">下载中 %1$d%%</string>
 
     <!-- 关于 -->
     <string name="about_title">关于</string>
@@ -246,12 +231,7 @@
     <string name="licenses_body">本应用基于多个开源项目构建，完整许可清单见项目 THIRD_PARTY_NOTICES。</string>
 
     <!-- ViewModel / 数据 -->
-    <string name="license_local">本地</string>
-    <string name="note_local_import">本地导入</string>
     <string name="duplicate_suffix">副本</string>
-    <string name="download_failed">下载失败</string>
-    <string name="import_failed">导入失败</string>
-    <string name="font_default_name">字体</string>
     <string name="unnamed">未命名</string>
 
     <!-- 后台会话通知 -->
@@ -391,39 +371,18 @@
     <string name="scroll_mode_hint">智能（推荐）：远端开了鼠标滚动就发滚轮；普通输出滚本地历史；判不出来时什么都不发，避免方向键去翻命令历史。\n始终发滚轮：远端支持鼠标但当前界面没开启跟踪时可试。\n始终发方向键：翻页器（less、man、vim）滚不动时用它——尤其是 mosh 会话，mosh 不传递前台程序信息，只能由你指定。</string>
     <string name="github_repo">GitHub 仓库</string>
 
-    <!-- 0.1.20：凭据存储 / 连接反馈 / 字体说明 -->
+    <!-- 0.1.20：凭据存储 / 连接反馈 -->
     <string name="hosts_unreadable_title">保存的连接无法解密</string>
     <string name="hosts_unreadable_hint">连接凭据由本机密钥库里的密钥加密，而那个密钥已经不在了——通常发生在把备份恢复到新设备之后。原数据保持原样，不会被任何新写入覆盖。要重新开始，请清除应用数据。</string>
     <string name="ssh_connecting">[moke] 正在连接 %1$s…</string>
     <string name="mosh_bootstrap_unparsed">未从 mosh-server 输出里解析到 MOSH CONNECT：\n%1$s</string>
-    <string name="font_note_jetbrains_mono">内置默认 · 精致清晰，中文走回退字体</string>
-    <string name="font_note_noto_sans_sc">内置中文回退 · 思源黑体子集（常用汉字），开箱中文好看</string>
-    <string name="font_note_fira_code">最流行的连字编程字体 · 体积小</string>
-    <string name="font_note_maple_mono">圆角等宽 · 含中文(2:1)+Nerd图标 · 高分屏 unhinted · 整包大，建议 WiFi</string>
-    <string name="font_note_hack">经典编程等宽 · 英文，无连字，体积小</string>
-    <string name="font_note_ibm_plex_mono">IBM 出品 · 沉稳清晰</string>
-    <string name="font_note_source_code_pro">Adobe 经典编程等宽</string>
-    <string name="font_note_roboto_mono">Roboto 家族等宽版</string>
-    <string name="font_note_ubuntu_mono">Ubuntu 系统等宽</string>
-    <string name="font_note_inconsolata">清晰细长的等宽</string>
-    <string name="font_note_space_mono">复古几何风等宽</string>
-    <string name="font_note_anonymous_pro">为编程设计的等宽</string>
-    <string name="font_note_cascadia_code">微软终端字体 · 连字</string>
-    <string name="font_note_jetbrains_mono_nerd_font">JetBrains Mono + Nerd 图标</string>
-    <string name="font_note_victor_mono">连字 + 草书斜体</string>
-    <string name="font_note_dejavu_sans_mono">字形覆盖广 · 兼容性好</string>
 
-    <!-- 0.1.20-rc.2：会话状态行 + 字体错误（issue #1） -->
+    <!-- 0.1.20-rc.2：会话状态行 -->
     <string name="term_connect_failed">[连接失败: %1$s]</string>
     <string name="term_session_ended">[会话结束]</string>
     <string name="term_left_tmux">[已离开 tmux]</string>
     <string name="term_session_ended_code">[会话结束 (code %1$d)]</string>
     <string name="term_session_ended_signal">[会话结束 (signal %1$d)]</string>
-    <string name="font_no_url">该字体没有下载地址</string>
-    <string name="font_checksum_failed">校验失败（sha256 不匹配）</string>
-    <string name="font_zip_entry_missing">压缩包内未找到匹配 \'%1$s\' 的 ttf</string>
-    <string name="font_read_failed">无法读取所选文件</string>
-    <string name="font_invalid">不是有效的字体文件（需 TTF / OTF）</string>
     <!-- 危险操作的二次确认 -->
     <string name="host_delete_title">删除主机</string>
     <string name="host_delete_confirm">删除「%1$s」？
@@ -431,11 +390,9 @@
     <string name="sessions_clear_ended_title">清理已结束会话</string>
     <string name="sessions_clear_ended_confirm">清理 %1$d 个已结束的会话？它们的终端输出会一并丢弃。</string>
     <string name="action_clear">清理</string>
-    <string name="font_delete_title">删除字体</string>
-    <string name="font_delete_confirm">删除「%1$s」？之后要用需重新下载或导入。</string>
     <string name="hostkey_clear_confirm">清除 %1$s 已保存的指纹？下次连接时会重新请你确认指纹。</string>
     <string name="action_clear_fingerprint">清除</string>
-    <string name="reset_default_confirm">把外观设置全部恢复为默认值？当前的字体、配色、字号与光标设置会被覆盖。</string>
+    <string name="reset_default_confirm">把配色、字号、间距和光标设置恢复为默认值？</string>
     <!-- 终端链接操作条 -->
     <string name="link_open">打开</string>
     <string name="link_copied">已复制链接</string>

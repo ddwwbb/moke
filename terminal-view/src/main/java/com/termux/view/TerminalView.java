@@ -481,15 +481,20 @@ public final class TerminalView extends View {
             }
         }
 
-        if (!skipScrolling && mTopRow != 0) {
-            // Scroll down if not already there.
-            if (mTopRow < -3) {
-                // Awaken scroll bars only if scrolling a noticeable amount
-                // - we do not want visible scroll bars during normal typing
-                // of one row at a time.
-                awakenScrollBars();
+        if (!skipScrolling) {
+            int rowShift = mEmulator.getScrollCounter();
+            if (rowShift > 0) {
+                if (mTopRow < 0) {
+                    // moke: 用户正在浏览历史时，新行到达只平移视图，保持相对位置不吸底——
+                    // 上游 Termux 在此直接 mTopRow=0，交互程序（ohmypi 等）持续输出会
+                    // 把用户刚滚上去的视图立刻拽回底部。回底由「跳到底部」浮层承担。
+                    mTopRow = Math.max(-rowsInHistory, mTopRow - rowShift);
+                } else {
+                    mTopRow = 0;
+                }
+            } else if (mTopRow != 0) {
+                if (mTopRow < -3) awakenScrollBars();
             }
-            mTopRow = 0;
         }
 
         mEmulator.clearScrollCounter();

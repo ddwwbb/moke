@@ -200,6 +200,12 @@
     <string name="keys_section_edit">Editing</string>
     <string name="keys_section_fn">Function</string>
     <string name="keys_section_ctrl">Control</string>
+    <string name="keys_layout_default">Default</string>
+    <string name="keys_layout_custom">Custom</string>
+    <string name="keys_customize">Edit shortcut keys</string>
+    <string name="keys_custom_hint">Choose twelve keys for the two rows. The two rightmost action keys are fixed.</string>
+    <string name="keys_layout_title">Shortcut layout</string>
+    <string name="keys_pick_slot">Key %1$d · select a replacement</string>
     <string name="composer_title">Text block</string>
     <string name="composer_field">Text to send</string>
     <string name="composer_clear">Clear</string>
@@ -208,13 +214,10 @@
 
     <!-- 外观 -->
     <string name="section_font">Font</string>
+    <string name="font_maple_only">Maple Mono NF CN · unhinted · bundled</string>
     <string name="section_typography">Typography</string>
     <string name="section_colors">Colors</string>
     <string name="section_cursor">Cursor</string>
-    <string name="primary_font">Primary font</string>
-    <string name="fallback_font">Fallback font</string>
-    <string name="font_manage_title">Manage fonts</string>
-    <string name="font_manage_sub">Download fonts · set primary / fallback</string>
     <string name="line_spacing">Line spacing</string>
     <string name="letter_spacing">Letter spacing</string>
     <string name="color_scheme">Color scheme</string>
@@ -223,24 +226,6 @@
     <string name="cursor_bar">Bar</string>
     <string name="cursor_blink">Cursor blink</string>
     <string name="reset_done">Reset to defaults</string>
-    <string name="fallback_none">None (system default)</string>
-
-    <!-- 字体能力标签 -->
-    <string name="tag_bundled">Bundled</string>
-    <string name="tag_local">Local</string>
-    <string name="tag_cjk">CJK</string>
-    <string name="tag_ligature">Ligatures</string>
-
-    <!-- 字体管理 -->
-    <string name="fonts_title">Fonts</string>
-    <string name="fonts_desc">The primary font sets the Latin look; the fallback fills glyphs it lacks (such as Chinese). Pick a CJK font as the fallback for good-looking Chinese.</string>
-    <string name="font_upload">Upload local font (TTF / OTF)</string>
-    <string name="font_importing">Importing…</string>
-    <string name="font_imported">Imported \"%1$s\"</string>
-    <string name="role_primary">Primary</string>
-    <string name="role_fallback">Fallback</string>
-    <string name="font_download">Download</string>
-    <string name="font_downloading">Downloading %1$d%%</string>
 
     <!-- 关于 -->
     <string name="about_title">About</string>
@@ -250,12 +235,7 @@
     <string name="licenses_body">Moke is built on several open-source projects; see the project THIRD_PARTY_NOTICES for the full license list.</string>
 
     <!-- ViewModel / 数据 -->
-    <string name="license_local">Local</string>
-    <string name="note_local_import">Imported locally</string>
     <string name="duplicate_suffix">copy</string>
-    <string name="download_failed">Download failed</string>
-    <string name="import_failed">Import failed</string>
-    <string name="font_default_name">Font</string>
     <string name="unnamed">Unnamed</string>
 
     <!-- 后台会话通知 -->
@@ -395,39 +375,18 @@
     <string name="scroll_mode_hint">Smart (recommended): sends wheel events when the remote enables mouse scrolling; scrolls local history for ordinary output; sends nothing when it cannot tell, so arrow keys never walk your command history.\nAlways send wheel: worth trying when the remote supports the mouse but has not enabled tracking on the current screen.\nAlways send arrow keys: use it when pagers (less, man, vim) will not scroll — especially over mosh, which carries no information about the foreground program, so only you can decide.</string>
     <string name="github_repo">GitHub repository</string>
 
-    <!-- 0.1.20: credential store / connect feedback / font notes -->
+    <!-- 0.1.20: credential store / connect feedback -->
     <string name="hosts_unreadable_title">Saved connections cannot be decrypted</string>
     <string name="hosts_unreadable_hint">They are encrypted with a key held in this device\'s keystore, and that key is gone — usually after restoring a backup onto a new device. The old data is kept untouched and nothing new will be written over it. Clear the app\'s data to start fresh.</string>
     <string name="ssh_connecting">[moke] Connecting to %1$s…</string>
     <string name="mosh_bootstrap_unparsed">No MOSH CONNECT line in the mosh-server output:\n%1$s</string>
-    <string name="font_note_jetbrains_mono">Bundled default · crisp and refined; CJK falls back to the fallback font</string>
-    <string name="font_note_noto_sans_sc">Bundled CJK fallback · Noto Sans SC subset (common Han characters)</string>
-    <string name="font_note_fira_code">The most popular ligature coding font · small</string>
-    <string name="font_note_maple_mono">Rounded monospace · CJK (2:1) + Nerd icons · unhinted for hi-dpi · large download, use Wi-Fi</string>
-    <string name="font_note_hack">Classic coding monospace · Latin only, no ligatures, small</string>
-    <string name="font_note_ibm_plex_mono">By IBM · calm and legible</string>
-    <string name="font_note_source_code_pro">Adobe\'s classic coding monospace</string>
-    <string name="font_note_roboto_mono">The monospace member of the Roboto family</string>
-    <string name="font_note_ubuntu_mono">Ubuntu\'s system monospace</string>
-    <string name="font_note_inconsolata">Crisp and narrow monospace</string>
-    <string name="font_note_space_mono">Retro geometric monospace</string>
-    <string name="font_note_anonymous_pro">Monospace designed for coding</string>
-    <string name="font_note_cascadia_code">Microsoft\'s terminal font · ligatures</string>
-    <string name="font_note_jetbrains_mono_nerd_font">JetBrains Mono + Nerd icons</string>
-    <string name="font_note_victor_mono">Ligatures + cursive italics</string>
-    <string name="font_note_dejavu_sans_mono">Broad glyph coverage · very compatible</string>
 
-    <!-- 0.1.20-rc.2: session status lines + font errors (issue #1) -->
+    <!-- 0.1.20-rc.2: session status lines -->
     <string name="term_connect_failed">[connect failed: %1$s]</string>
     <string name="term_session_ended">[session ended]</string>
     <string name="term_left_tmux">[left tmux]</string>
     <string name="term_session_ended_code">[session ended (code %1$d)]</string>
     <string name="term_session_ended_signal">[session ended (signal %1$d)]</string>
-    <string name="font_no_url">This font has no download URL</string>
-    <string name="font_checksum_failed">Checksum mismatch (sha256)</string>
-    <string name="font_zip_entry_missing">No ttf matching \'%1$s\' inside the archive</string>
-    <string name="font_read_failed">Cannot read the selected file</string>
-    <string name="font_invalid">Not a valid font file (TTF / OTF required)</string>
     <!-- Confirmations for destructive actions -->
     <string name="host_delete_title">Delete host</string>
     <string name="host_delete_confirm">Delete “%1$s”?
@@ -435,11 +394,9 @@ Its saved password / private key and host fingerprint are removed too. This can\
     <string name="sessions_clear_ended_title">Clear ended sessions</string>
     <string name="sessions_clear_ended_confirm">Clear %1$d ended sessions? Their terminal output is discarded.</string>
     <string name="action_clear">Clear</string>
-    <string name="font_delete_title">Delete font</string>
-    <string name="font_delete_confirm">Delete “%1$s”? You\'ll need to download or import it again to use it.</string>
     <string name="hostkey_clear_confirm">Clear the saved fingerprint for %1$s? You\'ll be asked to confirm the fingerprint again on the next connection.</string>
     <string name="action_clear_fingerprint">Clear</string>
-    <string name="reset_default_confirm">Reset all appearance settings to their defaults? Your current font, color scheme, size and cursor settings will be replaced.</string>
+    <string name="reset_default_confirm">Reset appearance colors, size, spacing and cursor settings to defaults?</string>
     <!-- 终端链接操作条 -->
     <string name="link_open">Open</string>
     <string name="link_copied">Link copied</string>

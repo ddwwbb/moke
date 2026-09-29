@@ -28,13 +28,9 @@ class LocalizationGuardTest {
      * 判定作用在**整行**上：命中就跳过该行。
      */
     private val allowed = listOf(
-        // 配色 / 字体目录里的中文显示名：与英文名成对存放，渲染时按当前语言二选一，
-        // 本身就是"中文那一份"，不是漏翻。FontCatalog 用具名参数 `nameZh =`；
-        // TerminalThemes 是位置参数，只能整文件放行——它是纯颜色表，没有别的文案。
-        Allow("nameZh", "字体目录的中文显示名，按语言二选一"),
+        // 配色方案的中文显示名是位置参数；预览样张故意包含 CJK 字形。
         Allow("TerminalThemes.kt", "配色方案的中文显示名（第 3 个位置参数），按语言二选一"),
-        // 外观预览的样张内容：故意含中日韩字形，用来演示回退字体的渲染效果。
-        Allow("PreviewTransport.kt", "外观预览样张，故意含 CJK 以演示字体回退"),
+        Allow("PreviewTransport.kt", "外观预览样张，故意含 CJK 以检验 Maple 字形"),
     )
 
     private data class Allow(val marker: String, val why: String)

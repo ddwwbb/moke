@@ -19,6 +19,7 @@ import com.briqt.moke.terminal.TmuxDiscovery
 import com.briqt.moke.terminal.TmuxPhase
 import com.briqt.moke.terminal.TmuxSession
 import com.briqt.moke.data.FilesSort
+import com.briqt.moke.data.ExtraKeysLayout
 import com.briqt.moke.data.GroupBy
 import com.briqt.moke.data.KeyboardMode
 import com.briqt.moke.data.SortBy
@@ -27,11 +28,7 @@ import com.briqt.moke.data.ScrollMode
 import com.briqt.moke.data.SessionPersistence
 import com.briqt.moke.data.SettingsStore
 import com.briqt.moke.data.ThemeMode
-import com.briqt.moke.data.UserFont
-import com.briqt.moke.terminal.FontCatalog
-import com.briqt.moke.terminal.FontInstallState
 import com.briqt.moke.terminal.FontRepository
-import com.briqt.moke.terminal.FontSpec
 import com.briqt.moke.terminal.TerminalThemes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -118,12 +115,6 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
             .onEach { id -> TerminalThemes.byId(id).applyToTerminal() }
             .stateIn(viewModelScope, SharingStarted.Eagerly, TerminalThemes.DEFAULT_ID)
 
-    val primaryFontId: StateFlow<String> = settings.primaryFontId
-        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_PRIMARY_FONT_ID)
-
-    val fallbackFontId: StateFlow<String> = settings.fallbackFontId
-        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FALLBACK_FONT_ID)
-
     val fontSizeSp: StateFlow<Float> = settings.fontSizeSp
         .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FONT_SIZE_SP)
 
@@ -135,6 +126,10 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
 
     val extraKeysVisible: StateFlow<Boolean> = settings.extraKeysVisible
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val extraKeysLayout: StateFlow<ExtraKeysLayout> = settings.extraKeysLayout
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ExtraKeysLayout.DEFAULT)
+    val customExtraKeyIds: StateFlow<List<String>> = settings.customExtraKeyIds
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** 应用明暗主题 / 动态取色 / 键盘模式 / 关闭会话二次确认。 */
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
@@ -200,44 +195,6 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
 
     val letterSpacing: StateFlow<Float> = settings.letterSpacing
         .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_SPACING)
-
-    /** 内置目录 + 用户上传字体的合并列表（供外观/字体页展示与选择）。 */
-    val fontCatalog: StateFlow<List<FontSpec>> = settings.userFonts
-        .map { users ->
-            FontCatalog.all + users.map { uf ->
-                FontSpec(
-                    id = uf.id, name = uf.name, nameZh = uf.name, license = str(R.string.license_local),
-                    cjk = false, bundled = false, url = null, archive = false,
-                    entryHint = "", approxBytes = 0, userUploaded = true, noteRes = R.string.note_local_import,
-                )
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, FontCatalog.all)
-
-    /** 仅承载「下载中 / 失败」这类瞬时状态；已装/未装由字体文件是否存在推导。 */
-    private val _downloadStates = MutableStateFlow<Map<String, FontInstallState>>(emptyMap())
-
-    /** 每个字体的安装状态：下载中/失败取瞬时态，否则按文件是否存在给已装/未装。 */
-    val fontStates: StateFlow<Map<String, FontInstallState>> =
-        combine(fontCatalog, _downloadStates) { catalog, dl ->
-            catalog.associate { spec ->
-                spec.id to (dl[spec.id] ?: if (fonts.isInstalled(spec)) FontInstallState.Installed else FontInstallState.Absent)
-            }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
-    /** 字体导入的错误提示（一次性，供 UI 展示后清除）。 */
-    private val _importError = MutableStateFlow<String?>(null)
-    val importError: StateFlow<String?> = _importError.asStateFlow()
-    fun clearImportError() { _importError.value = null }
-
-    /** 字体导入进行中（UI 显示 loading、禁用按钮）。 */
-    private val _importing = MutableStateFlow(false)
-    val importing: StateFlow<Boolean> = _importing.asStateFlow()
-
-    /** 导入成功提示（字体名，一次性）。 */
-    private val _importSuccess = MutableStateFlow<String?>(null)
-    val importSuccess: StateFlow<String?> = _importSuccess.asStateFlow()
-    fun clearImportSuccess() { _importSuccess.value = null }
 
     private val _migrationPreview = MutableStateFlow<HostMigration.Preview?>(null)
     val migrationPreview: StateFlow<HostMigration.Preview?> = _migrationPreview.asStateFlow()
@@ -878,10 +835,6 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSchemeFollowsTheme(on: Boolean) = viewModelScope.launch { settings.setSchemeFollowsTheme(on) }
 
-    fun setPrimaryFont(id: String) = viewModelScope.launch { settings.setPrimaryFont(id) }
-
-    fun setFallbackFont(id: String) = viewModelScope.launch { settings.setFallbackFont(id) }
-
     fun setFontSize(sp: Float) = viewModelScope.launch { settings.setFontSize(sp) }
 
     fun setCursorStyle(style: Int) = viewModelScope.launch { settings.setCursorStyle(style) }
@@ -893,6 +846,11 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     fun setLetterSpacing(v: Float) = viewModelScope.launch { settings.setLetterSpacing(v) }
 
     fun setExtraKeysVisible(visible: Boolean) = viewModelScope.launch { settings.setExtraKeysVisible(visible) }
+    fun setExtraKeysLayout(layout: ExtraKeysLayout) = viewModelScope.launch { settings.setExtraKeysLayout(layout) }
+
+    fun setCustomExtraKeyIds(ids: List<String>) = viewModelScope.launch {
+        settings.setCustomExtraKeyIds(validCustomKeyIds(ids))
+    }
 
     fun setThemeMode(m: ThemeMode) = viewModelScope.launch { settings.setThemeMode(m) }
 
@@ -914,56 +872,8 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setKeepScreenOn(on: Boolean) = viewModelScope.launch { settings.setKeepScreenOn(on) }
 
-    /** 恢复外观默认（配色/字体/字号/行距/字距/光标）。 */
+    /** 恢复外观默认（配色/字号/行距/字距/光标）。 */
     fun resetAppearanceDefaults() = viewModelScope.launch { settings.resetAppearanceDefaults() }
-
-    fun downloadFont(id: String) {
-        val spec = FontCatalog.byId(id)
-        if (spec.bundled || spec.url == null) return
-        if (_downloadStates.value[id] is FontInstallState.Downloading) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _downloadStates.update { it + (id to FontInstallState.Downloading(0f)) }
-            val result = fonts.download(spec) { p -> _downloadStates.update { it + (id to FontInstallState.Downloading(p)) } }
-            _downloadStates.update { m ->
-                result.fold(
-                    onSuccess = { m - id },   // 装好后移除瞬时态 → 由文件存在推导为「已装」
-                    onFailure = { m + (id to FontInstallState.Failed(it.message ?: str(R.string.download_failed))) },
-                )
-            }
-        }
-    }
-
-    /** 从系统文件选择器导入本地 TTF/OTF 字体。 */
-    fun importFont(uri: android.net.Uri) = viewModelScope.launch {
-        val name = displayNameOf(uri)
-        _importing.value = true
-        _importError.value = null
-        fonts.importFont(uri).fold(
-            onSuccess = { id -> settings.addUserFont(UserFont(id, name)); _importSuccess.value = name },
-            onFailure = { _importError.value = it.message ?: str(R.string.import_failed) },
-        )
-        _importing.value = false
-    }
-
-    private fun displayNameOf(uri: android.net.Uri): String {
-        val ctx = getApplication<Application>()
-        val fromCursor = runCatching {
-            ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                if (c.moveToFirst()) c.getString(0) else null
-            }
-        }.getOrNull()
-        val raw = fromCursor ?: uri.lastPathSegment ?: str(R.string.font_default_name)
-        return raw.substringAfterLast('/').substringBeforeLast('.').ifBlank { str(R.string.font_default_name) }
-    }
-
-    fun deleteFont(id: String) = viewModelScope.launch {
-        fonts.delete(id)
-        settings.removeUserFont(id)              // 若是用户字体则移除记录（对内置无副作用）
-        _downloadStates.update { it - id }
-        // 若被删字体正被使用，回退到默认/无
-        if (primaryFontId.value == id) settings.setPrimaryFont(SettingsStore.DEFAULT_PRIMARY_FONT_ID)
-        if (fallbackFontId.value == id) settings.setFallbackFont("")
-    }
 
     // 放在类末尾：init 里要用到上面声明的 settings / appVersion，Kotlin 按声明顺序初始化，提前放会 NPE。
     init {

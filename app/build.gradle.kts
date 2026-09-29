@@ -53,19 +53,12 @@ android {
         }
     }
 
-    // 发行变体：standard = 常规包（中文回退用内置思源黑体子集，体积小）；
-    // maple = 自带 Maple Mono NF CN 并作为默认中文回退（开箱中英等宽，代价是包更大）。
-    // 两者同 applicationId，用户择一安装；产物按文件名区分（见 Release 工作流）。
+    // Both published variants use the same bundled Maple Mono NF CN unhinted font.
+    // Keep flavor identifiers so existing release channels remain compatible.
     flavorDimensions += "dist"
     productFlavors {
-        create("standard") {
-            dimension = "dist"
-            buildConfigField("boolean", "BUNDLE_MAPLE", "false")
-        }
-        create("maple") {
-            dimension = "dist"
-            buildConfigField("boolean", "BUNDLE_MAPLE", "true")
-        }
+        create("standard") { dimension = "dist" }
+        create("maple") { dimension = "dist" }
     }
 
     compileOptions {

@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.briqt.moke.R
+import com.briqt.moke.data.ExtraKeysLayout
 import com.briqt.moke.data.KeyboardMode
 import com.briqt.moke.data.ScrollMode
 import com.briqt.moke.terminal.KeyId
@@ -106,8 +107,6 @@ import kotlinx.coroutines.withContext
 @Composable
 fun TerminalScreen(
     ts: TermSession,
-    primaryFontId: String,
-    fallbackFontId: String,
     fontSizeSp: Float,
     lineSpacing: Float,
     letterSpacing: Float,
@@ -115,11 +114,13 @@ fun TerminalScreen(
     cursorBlink: Boolean,
     schemeId: String,
     extraKeysVisible: Boolean,
+    extraKeysLayout: ExtraKeysLayout,
+    customExtraKeyIds: List<String>,
     keyboardMode: KeyboardMode,
     scrollMode: ScrollMode,
     confirmClose: Boolean,
     keepScreenOn: Boolean,
-    resolveTypeface: (String, String) -> android.graphics.Typeface,
+    resolveTypeface: () -> android.graphics.Typeface,
     onBack: () -> Unit,
     onReconnect: () -> Unit,
     onClose: () -> Unit,
@@ -128,6 +129,8 @@ fun TerminalScreen(
     onKeyboardMode: (KeyboardMode) -> Unit,
     onScrollMode: (ScrollMode) -> Unit,
     onToggleExtraKeys: () -> Unit,
+    onExtraKeysLayout: (ExtraKeysLayout) -> Unit,
+    onCustomExtraKeyIds: (List<String>) -> Unit,
     onTmuxRefresh: () -> Unit,
     onTmuxNew: (String) -> Unit,
     onTmuxRename: (String, String) -> Unit,
@@ -193,6 +196,8 @@ fun TerminalScreen(
     var panelOpen by remember(ts.id) { mutableStateOf(false) }
 
     var showComposer by remember(ts.id) { mutableStateOf(false) }
+    var showCustomKeysDialog by remember(ts.id) { mutableStateOf(false) }
+    var showExtraKeysLayoutDialog by remember(ts.id) { mutableStateOf(false) }
     LaunchedEffect(ts.id) {
         ts.draftNeedsReview.collect { pending ->
             if (pending) {
@@ -260,7 +265,7 @@ fun TerminalScreen(
         // 注意顺序：先 setTextSize 创建 renderer，再 setTypeface（其读取 mRenderer 不判空）。
         val px = Math.round(fontSizeSp * context.resources.displayMetrics.density)
         view.setTextSize(px)
-        view.setTypeface(resolveTypeface(primaryFontId, fallbackFontId))
+        view.setTypeface(resolveTypeface())
         view.setFontSpacing(lineSpacing, letterSpacingEm(letterSpacing))
         view.attachSession(ts.session)
         onDispose {
@@ -283,11 +288,6 @@ fun TerminalScreen(
         view.requestFocus()
     }
 
-    // 热切换：设置变更时对当前活动终端即时生效（含空闲会话——强制重绘，不必等新输出）。
-    LaunchedEffect(ts.id, primaryFontId, fallbackFontId) {
-        view.setTypeface(resolveTypeface(primaryFontId, fallbackFontId))
-        view.onScreenUpdated()
-    }
     LaunchedEffect(ts.id, fontSizeSp) {
         val px = Math.round(fontSizeSp * context.resources.displayMetrics.density)
         view.setTextSize(px)
@@ -353,6 +353,9 @@ fun TerminalScreen(
                 showLatency = !ts.host.useMosh,
                 fontSizeSp = fontSizeSp,
                 extraKeysVisible = extraKeysVisible,
+                extraKeysLayout = extraKeysLayout,
+                onPickExtraKeysLayout = { showExtraKeysLayoutDialog = true },
+                onEditExtraKeys = { showCustomKeysDialog = true },
                 keyboardMode = keyboardMode,
                 tmuxAvailable = tmuxState.phase != TmuxPhase.IDLE &&
                     tmuxState.phase != TmuxPhase.NOT_INSTALLED,
@@ -532,7 +535,7 @@ fun TerminalScreen(
                     },
                 )
                 extraKeysVisible -> ExtraKeys(
-                    rows = DEFAULT_EXTRA_KEYS,
+                    rows = remember(extraKeysLayout, customExtraKeyIds) { layoutRows(extraKeysLayout, customExtraKeyIds) },
                     mods = mods,
                     panelOpen = panelOpen,
                     onKey = { key -> mods = sendKey(ts, controller, mods, key) },
@@ -547,6 +550,21 @@ fun TerminalScreen(
                 else -> ExtraKeysRestoreHandle(onRestore = onToggleExtraKeys)
             }
         }
+    }
+    if (showExtraKeysLayoutDialog) {
+        ExtraKeysLayoutDialog(
+            current = extraKeysLayout,
+            onPick = { onExtraKeysLayout(it); showExtraKeysLayoutDialog = false },
+            onDismiss = { showExtraKeysLayoutDialog = false },
+        )
+    }
+
+    if (showCustomKeysDialog) {
+        CustomExtraKeysDialog(
+            ids = customExtraKeyIds,
+            onSave = { onCustomExtraKeyIds(it); showCustomKeysDialog = false },
+            onDismiss = { showCustomKeysDialog = false },
+        )
     }
 
     if (showTitleDialog) {
@@ -703,6 +721,9 @@ private fun TerminalTopBar(
     showLatency: Boolean,
     fontSizeSp: Float,
     extraKeysVisible: Boolean,
+    extraKeysLayout: ExtraKeysLayout,
+    onPickExtraKeysLayout: () -> Unit,
+    onEditExtraKeys: () -> Unit,
     keyboardMode: KeyboardMode,
     tmuxAvailable: Boolean,
     tmuxCount: Int,
@@ -894,6 +915,24 @@ private fun TerminalTopBar(
                         leadingIcon = { Icon(Icons.Filled.KeyboardAlt, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         onClick = { menuOpen = false; onPickKeyboardMode() },
                     )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(stringResource(R.string.keys_layout_title), style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(extraKeysLayout.labelRes), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        leadingIcon = { Icon(Icons.Filled.Keyboard, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { menuOpen = false; onPickExtraKeysLayout() },
+                    )
+                    if (extraKeysLayout == ExtraKeysLayout.CUSTOM) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.keys_customize), style = MaterialTheme.typography.bodyMedium) },
+                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onEditExtraKeys() },
+                        )
+                    }
                     // 显示 / 隐藏底部快捷键条（双箭头表意“底部工具条上/下”）。
                     DropdownMenuItem(
                         text = { Text(if (extraKeysVisible) stringResource(R.string.hide_extra_keys) else stringResource(R.string.show_extra_keys), style = MaterialTheme.typography.bodyMedium) },

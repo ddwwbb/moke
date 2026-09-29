@@ -35,10 +35,7 @@ data class DropdownOption(
     val leading: (@Composable () -> Unit)? = null,
 )
 
-/**
- * 通用富下拉框（字体 / 配色共用）。收起时锚点显示当前选中项标题；展开后每行含
- * 前导 + 标题 + 标签 + 副标题 + 状态，点击即回调选择/触发动作。可选 [footer]（如"管理字体…"）。
- */
+/** 配色方案富下拉框：标题、可选色块、副标题和标签。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RichDropdown(

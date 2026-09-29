@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,7 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -46,7 +51,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.briqt.moke.R
+import com.briqt.moke.data.ExtraKeysLayout
 import com.briqt.moke.terminal.KeyId
 import com.briqt.moke.terminal.ModKind
 import com.briqt.moke.terminal.ModState
@@ -77,17 +85,8 @@ sealed interface ExtraKey {
 const val ACTION_COMPOSER = "composer"
 const val ACTION_PANEL = "panel"
 
-/*
- * 收录标准（rc.3 重定）：**只放软键盘给不了的键**。
- *
- * 字母、数字、标点（含 `| ~ \ {} <>`）输入法都打得出来，摆在这里等于用最贵的屏幕位置重复一遍
- * 已有的功能。只有实体全键盘才有的是：修饰键、Esc/Tab、方向与翻页、行首行尾、F1–F12、
- * Ctrl 组合、Shift+Tab。按这条线砍掉了 rc.2 的整页符号，以及散在导航行里的 `/` `-`。
- *
- * 分工：**常驻两排 = 给不了 ∩ 高频**；**面板 = 给不了的其余全部**（外加 Enter/⌫ 两个
- * "软键盘被隐藏时"的兜底键）。同一个键不在两处重复出现——面板就浮在常驻两排上方，
- * 重复只会让人分不清该按哪个，也是 rc.2 显得乱的主要来源。
- */
+/* Two seven-key rows: six configurable positions and a fixed action at the end of each row.
+ * The expanded panel remains available regardless of the selected layout. */
 
 /**
  * 常驻双排附加键：均匀铺满宽度、不横向滚动，中间三列保持倒 T 方向键。
@@ -196,8 +195,122 @@ fun ExtraKeys(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            rows.forEach { row ->
-                KeyRow(row, mods, panelOpen, onKey, onToggleMod, onAction)
+            rows.forEach { row -> KeyRow(row, mods, panelOpen, onKey, onToggleMod, onAction) }
+        }
+    }
+}
+
+@Composable
+fun ExtraKeysLayoutDialog(current: ExtraKeysLayout, onPick: (ExtraKeysLayout) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.keys_layout_title)) },
+        text = {
+            Column {
+                ExtraKeysLayout.entries.forEach { option ->
+                    TextButton(onClick = { onPick(option) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(option.labelRes), modifier = Modifier.weight(1f))
+                        if (option == current) Text("✓")
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+internal val ExtraKeysLayout.labelRes: Int get() = when (this) {
+    ExtraKeysLayout.DEFAULT -> R.string.keys_layout_default
+    ExtraKeysLayout.EDIT -> R.string.keys_section_edit
+    ExtraKeysLayout.FUNCTION -> R.string.keys_section_fn
+    ExtraKeysLayout.CONTROL -> R.string.keys_section_ctrl
+    ExtraKeysLayout.CUSTOM -> R.string.keys_layout_custom
+}
+
+@Composable
+fun CustomExtraKeysDialog(ids: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
+    var draft by remember { mutableStateOf(validCustomKeyIds(ids)) }
+    var selectedSlot by remember { mutableStateOf<Int?>(null) }
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp).padding(12.dp),
+            shape = MokeShapes.card,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    if (selectedSlot == null) stringResource(R.string.keys_customize)
+                    else stringResource(R.string.keys_pick_slot, selectedSlot!! + 1),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (selectedSlot == null) {
+                    Text(stringResource(R.string.keys_custom_hint), style = MaterialTheme.typography.bodySmall)
+                    repeat(2) { rowIndex ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            repeat(6) { column ->
+                                val index = rowIndex * 6 + column
+                                val label = draft[index]
+                                Surface(
+                                    onClick = { selectedSlot = index },
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = MokeShapes.keycap,
+                                    color = if (label == "ESC" || label == "DEL") MaterialTheme.colorScheme.errorContainer
+                                        else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(label, fontSize = 10.sp, fontFamily = MokeMono, maxLines = 1,
+                                            color = when (label) {
+                                                "ESC", "DEL" -> MaterialTheme.colorScheme.onErrorContainer
+                                                "^C" -> MaterialTheme.colorScheme.error
+                                                else -> MaterialTheme.colorScheme.onSurface
+                                            })
+                                    }
+                                }
+                            }
+                            Surface(
+                                modifier = Modifier.weight(1f).height(42.dp),
+                                shape = MokeShapes.keycap,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(if (rowIndex == 0) Icons.Filled.KeyboardArrowUp else Icons.Filled.EditNote,
+                                        contentDescription = stringResource(if (rowIndex == 0) R.string.key_more else R.string.key_text),
+                                        modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        EXTRA_KEY_CATALOG.chunked(4).forEach { keys ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                keys.forEach { key ->
+                                    Surface(onClick = {
+                                        draft = draft.toMutableList().apply { this[selectedSlot!!] = key.label }
+                                        selectedSlot = null
+                                    }, modifier = Modifier.weight(1f).height(40.dp), shape = MokeShapes.keycap,
+                                        color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(key.label, fontSize = 12.sp, fontFamily = MokeMono, maxLines = 1,
+                                                color = if (key.label == "^C") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                                        }
+                                    }
+                                }
+                                repeat(4 - keys.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { if (selectedSlot == null) onDismiss() else selectedSlot = null }) {
+                        Text(stringResource(if (selectedSlot == null) R.string.action_cancel else R.string.action_back))
+                    }
+                    if (selectedSlot == null) TextButton(onClick = { onSave(draft) }) {
+                        Text(stringResource(R.string.action_save))
+                    }
+                }
             }
         }
     }
@@ -233,6 +346,9 @@ private fun KeyRow(
                 // 一次性修饰用主色实心，锁定态用更强的色块区分——否则分不清"这次有效"和"一直有效"。
                 active = state.active || (isPanel && panelOpen),
                 locked = state == ModState.Locked,
+                danger = key.label == "ESC" || key.label == "DEL",
+                redText = key.label == "^C",
+                action = isPanel || isComposer,
                 modifier = Modifier.weight(1f),
                 onClick = {
                     when (key) {
@@ -322,6 +438,9 @@ private fun KeyCap(
     label: String,
     active: Boolean,
     locked: Boolean = false,
+    danger: Boolean = false,
+    redText: Boolean = false,
+    action: Boolean = false,
     icon: ImageVector? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -334,11 +453,16 @@ private fun KeyCap(
         color = when {
             locked -> MaterialTheme.colorScheme.tertiary
             active -> MaterialTheme.colorScheme.primary
+            danger -> MaterialTheme.colorScheme.errorContainer
+            action -> MaterialTheme.colorScheme.secondaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainerHighest
         },
         contentColor = when {
             locked -> MaterialTheme.colorScheme.onTertiary
             active -> MaterialTheme.colorScheme.onPrimary
+            danger -> MaterialTheme.colorScheme.onErrorContainer
+            action -> MaterialTheme.colorScheme.onSecondaryContainer
+            redText -> MaterialTheme.colorScheme.error
             else -> MaterialTheme.colorScheme.onSurface
         },
     ) {

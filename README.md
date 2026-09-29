@@ -23,8 +23,8 @@ Moke is a native SSH / mosh terminal for Android. It connects to remote servers 
 - **tmux**: a panel to attach / create / rename / detach / kill remote sessions; optionally attach automatically on connect. After the app process ends, selecting a saved tmux host attaches again by its remembered session name (not the old terminal scrollback). A saved remote project directory has a separate, explicit workspace entry; the workspace name includes a path-derived suffix to avoid confusing same-named directories.
 - **Files**: browse remote folders over SFTP (SSH and mosh hosts); upload / download with resume; transfers keep running in the background. Files opened from a host with a saved project directory start there. When entered from a terminal, a completed upload adds its shell-quoted remote path to that session’s editable text-block draft; it never sends or presses Enter automatically. Overwriting an existing remote file still requires confirmation. Existing remote file paths can be sent to the terminal manually.
 - **Sessions & hosts**: multiple sessions stay resident, with a foreground service keeping connections alive in the background; group / sort (including manual drag-to-reorder); duplicate; per-session titles; clear ended sessions; copy connect command. Settings → Import / export hosts creates a versioned, non-secret JSON file; import previews every host and requires an Add / Replace / Skip decision per entry. Passwords, private keys, and passphrases are not exported and must be re-entered on the new device.
-- **Terminal**: two-row extra keys plus an expandable full keyboard (editing keys, F1–F12, Ctrl shortcuts) with lockable modifiers; text-block input; three keyboard modes (character / standard / IME first) for comfortable CJK input; copy & paste, including remote clipboard writes (OSC 52); pinch-to-zoom; swipe-to-scroll in full-screen TUIs with a selectable mode, plus jump-to-latest; a top status bar (protocol / host / latency).
-- **Appearance**: live preview; light / dark / follow-system theme with separate terminal color schemes for each; font size / line spacing / letter spacing; cursor style; font management (primary + CJK fallback — a bundled Noto Sans SC subset, plus downloadable Fira Code / Maple Mono / Hack and more, or import your own).
+- **Terminal**: two-row extra keys with five selectable layouts (default, editing, function, control, custom). The custom layout lets you replace twelve keys; the two rightmost actions (more keys and text-block input) stay fixed. The full keyboard remains expandable, with lockable modifiers; three keyboard modes (character / standard / IME first) support CJK input; copy & paste (including remote OSC 52), pinch-to-zoom, full-screen TUI scrolling modes, jump-to-latest, and a status bar (protocol / host / latency).
+- **Appearance**: live preview; light / dark / follow-system theme with separate terminal color schemes for each; bundled Maple Mono NF CN unhinted (Latin, CJK and Nerd glyphs), font size / line spacing / letter spacing; cursor style.
 - **Security, languages & updates**: credentials are encrypted with the Android Keystore (AES-GCM) before being stored and are excluded from system backups; bilingual English / 中文, following the system language by default and switchable in Settings; in-app update check (optionally including pre-releases).
 
 ## Screenshots
@@ -36,10 +36,7 @@ Moke is a native SSH / mosh terminal for Android. It connects to remote servers 
 
 ## Install
 
-From [Releases](https://github.com/ddwwbb/moke/releases), pick one:
-
-- `moke-vX.Y.Z.apk` — standard build; CJK fallback is a bundled Noto Sans SC subset (smaller).
-- `moke-vX.Y.Z-maple.apk` — bundles Maple Mono as the default CJK fallback, monospaced CJK out of the box (larger).
+From [Releases](https://github.com/ddwwbb/moke/releases), choose the Standard or Maple APK. Both now bundle the same Maple Mono NF CN unhinted font; the existing release variants remain for upgrade compatibility.
 
 Allow "install from unknown sources" and install. Release builds use a stable signature, so upgrades install over the top.
 
@@ -55,16 +52,12 @@ Allow "install from unknown sources" and install. Release builds use a stable si
 
 Requires JDK 17 + Android SDK (compileSdk 35 / build-tools 35). Create `local.properties` at the project root pointing to the SDK: `sdk.dir=/path/to/Android/sdk`.
 
-```bash
-./gradlew assembleStandardDebug   # standard debug APK
-./gradlew testDebugUnitTest       # unit tests
-
-# The `maple` flavor bundles Maple Mono as the default CJK fallback.
-# Fetch the font first (OFL, ~20 MB, not checked in), then build:
-./scripts/fetch-maple-font.sh && ./gradlew assembleMapleDebug
+```sh
+./gradlew assembleStandardDebug
+./gradlew testDebugUnitTest testStandardDebugUnitTest
 ```
 
-The mosh native artifacts are reproducibly built by [`scripts/build-mosh-native.sh`](scripts/build-mosh-native.sh) from public sources (mosh 1.4.0 + rjyo/mosh-android prebuilt libs); NDK r29 is required, and the GPLv3 binaries are not checked in. The `maple` flavor's bundled font is fetched by [`scripts/fetch-maple-font.sh`](scripts/fetch-maple-font.sh) (OFL, not checked in).
+The mosh native artifacts are reproducibly built by [`scripts/build-mosh-native.sh`](scripts/build-mosh-native.sh) from public sources (mosh 1.4.0 + rjyo/mosh-android prebuilt libs); NDK r29 is required, and the GPLv3 binaries are not checked in.
 
 ## Feedback
 
@@ -74,7 +67,7 @@ Community discussion: [学AI，linuxdo](https://linux.do/)
 
 ## Acknowledgements & third-party
 
-The terminal core reuses `terminal-emulator` / `terminal-view` from [termux/termux-app](https://github.com/termux/termux-app) (Apache-2.0, originally from [Android Terminal Emulator](https://github.com/jackpal/Android-Terminal-Emulator)). SSH transport uses [sshj](https://github.com/hierynomus/sshj). The mosh native component is based on [mobile-shell/mosh](https://github.com/mobile-shell/mosh) (GPLv3) and [rjyo/mosh-android](https://github.com/rjyo/mosh-android). The bundled Chinese font is a subset of [Noto Sans SC](https://github.com/notofonts/noto-cjk) (OFL). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list.
+The terminal core reuses `terminal-emulator` / `terminal-view` from [termux/termux-app](https://github.com/termux/termux-app) (Apache-2.0, originally from [Android Terminal Emulator](https://github.com/jackpal/Android-Terminal-Emulator)). SSH transport uses [sshj](https://github.com/hierynomus/sshj). The mosh native component is based on [mobile-shell/mosh](https://github.com/mobile-shell/mosh) (GPLv3) and [rjyo/mosh-android](https://github.com/rjyo/mosh-android). The sole bundled font is [Maple Mono NF CN](https://github.com/subframe7536/maple-font) (OFL). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list.
 
 ## License
 

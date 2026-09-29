@@ -31,8 +31,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 只构建 standard 变体：maple 变体与它同源（差异仅 BuildConfig 开关 + 内置字体），
-      # 编译等价；maple 的完整构建（含字体获取）在 Release 工作流验证。
+      # Standard and Maple now share the same bundled font and product code;
+      # CI assembles Standard, while Release verifies both package names.
       - name: Assemble debug APK
         run: ./gradlew assembleStandardDebug --stacktrace
 

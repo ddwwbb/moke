@@ -1,5 +1,6 @@
 package com.briqt.moke.ui
 
+import com.briqt.moke.data.ExtraKeysLayout
 import com.briqt.moke.terminal.Modifiers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -78,5 +79,41 @@ class KeySectionsTest {
         }
         val labels = allKeys(fnSection.rows).map { it.label }
         assertEquals((1..12).map { "F$it" }, labels)
+    }
+
+    @Test
+    fun `every preset has twelve configurable keys and two fixed rightmost actions`() {
+        ExtraKeysLayout.entries.forEach { layout ->
+            val rows = layoutRows(layout, DEFAULT_KEY_IDS)
+            assertEquals(layout.name, listOf(7, 7), rows.map { it.size })
+            assertTrue(layout.name, rows.flatMap { it.take(6) }.none { it is ExtraKey.Action })
+            assertEquals(ExtraKey.Action(ACTION_PANEL), rows[0].last())
+            assertEquals(ExtraKey.Action(ACTION_COMPOSER), rows[1].last())
+        }
+    }
+
+    @Test
+    fun `custom layout preserves chosen slots and fixed rightmost actions`() {
+        val chosen = listOf("F12", "CTRL", "^C", "←", "Enter", "ESC", "F1", "F1", "TAB", "⌫", "PgDn", "SHIFT")
+        val rows = layoutRows(ExtraKeysLayout.CUSTOM, chosen)
+        assertEquals(chosen.take(6), rows[0].take(6).map { it.label })
+        assertEquals(chosen.drop(6), rows[1].take(6).map { it.label })
+        assertEquals(ExtraKey.Action(ACTION_PANEL), rows[0].last())
+        assertEquals(ExtraKey.Action(ACTION_COMPOSER), rows[1].last())
+        assertEquals("\u001b[24~", plain.encode((rows[0][0] as ExtraKey.Key).key))
+    }
+
+    @Test
+    fun `invalid stored custom keys cannot replace fixed actions or break toolbar`() {
+        for (stored in listOf(listOf("ESC"), List(12) { "panel" })) {
+            assertEquals(DEFAULT_KEY_IDS, layoutKeyIds(ExtraKeysLayout.CUSTOM, stored))
+        }
+    }
+
+    @Test
+    fun `function preset shows F1 to F12 across two horizontal rows`() {
+        val rows = layoutRows(ExtraKeysLayout.FUNCTION, emptyList())
+        assertEquals((1..6).map { "F$it" }, rows[0].take(6).map { it.label })
+        assertEquals((7..12).map { "F$it" }, rows[1].take(6).map { it.label })
     }
 }

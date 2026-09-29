@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.Contrast
-import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
@@ -63,8 +62,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.briqt.moke.R
-import com.briqt.moke.terminal.FontCatalog
-import com.briqt.moke.terminal.FontInstallState
 import com.briqt.moke.terminal.PreviewTransport
 import com.briqt.moke.terminal.TermColorScheme
 import com.briqt.moke.terminal.TerminalController
@@ -89,65 +86,27 @@ fun AppearanceScreen(
     schemeFollowsTheme: Boolean,
     /** 当前实际生效的配色（联动开启时可能是 [lightSchemeId]）——预览与终端都用它。 */
     effectiveSchemeId: String,
-    primaryFontId: String,
-    fallbackFontId: String,
-    fonts: List<com.briqt.moke.terminal.FontSpec>,
-    fontStates: Map<String, FontInstallState>,
     fontSizeSp: Float,
     lineSpacing: Float,
     letterSpacing: Float,
     cursorStyle: Int,
     cursorBlink: Boolean,
-    resolveTypeface: (String, String) -> Typeface,
+    resolveTypeface: () -> Typeface,
     onSelectScheme: (String) -> Unit,
     onSelectLightScheme: (String) -> Unit,
     onSchemeFollowsTheme: (Boolean) -> Unit,
-    onSelectPrimary: (String) -> Unit,
-    onSelectFallback: (String) -> Unit,
     onFontSize: (Float) -> Unit,
     onLineSpacing: (Float) -> Unit,
     onLetterSpacing: (Float) -> Unit,
     onCursorStyle: (Int) -> Unit,
     onCursorBlink: (Boolean) -> Unit,
     onResetDefaults: () -> Unit,
-    onOpenFonts: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // 中文界面显示字体/配色的中文名，英文界面显示其本名（英文）。
+    // Language of theme names follows the active UI locale.
     val zh = LocalConfiguration.current.locales[0].language == "zh"
-    // 能力标签在 @Composable 作用域先取好（capTags 是普通局部函数，内部不能调 stringResource）。
-    val tagBundled = stringResource(R.string.tag_bundled)
-    val tagLocal = stringResource(R.string.tag_local)
-    val tagCjk = stringResource(R.string.tag_cjk)
-    val tagLigature = stringResource(R.string.tag_ligature)
     val tagLight = stringResource(R.string.tag_light_scheme)
-    // 标签配色在 @Composable 作用域先取好（下方 capTags 等在普通 map 中构造 BadgeSpec）。
-    val cTertiary = MaterialTheme.colorScheme.tertiary
-    val cPrimary = MaterialTheme.colorScheme.primary
     val cSecondary = MaterialTheme.colorScheme.secondary
-
-    fun installed(id: String) = fontStates[id] is FontInstallState.Installed
-    // 走共享 fontCapabilityBadges：与字体管理卡片里的同批标签文案/配色完全一致。
-    fun capTags(spec: com.briqt.moke.terminal.FontSpec) =
-        fontCapabilityBadges(spec, tagBundled, tagLocal, tagCjk, tagLigature, cTertiary, cPrimary, cSecondary)
-    fun fontName(spec: com.briqt.moke.terminal.FontSpec) = if (zh) spec.nameZh else spec.name
-    // 主字体：内置 + 已安装（含用户上传）
-    val primaryOptions = fonts.filter { it.bundled || installed(it.id) }.map { spec ->
-        DropdownOption(
-            id = spec.id,
-            title = fontName(spec),
-            subtitle = "${spec.name} · ${spec.license}",
-            tags = capTags(spec),
-        )
-    }
-    // 回退字体：无 + 已安装的含中文字体（回退用来补 Latin 缺失字形，如中文）。
-    val fallbackOptions = listOf(DropdownOption(id = "", title = stringResource(R.string.fallback_none))) +
-        fonts.filter { (it.bundled || installed(it.id)) && (it.cjk || it.userUploaded) }.map { spec ->
-            DropdownOption(
-                id = spec.id, title = fontName(spec), subtitle = spec.name,
-                tags = if (spec.userUploaded) listOf(BadgeSpec(tagLocal, cTertiary)) else listOf(BadgeSpec(tagCjk, cPrimary)),
-            )
-        }
     // 配色列表：浅色方案打「浅色」标，便于在以暗色为主的列表里一眼分辨。
     val schemeOptions = TerminalThemes.all.map { s ->
         DropdownOption(
@@ -164,7 +123,7 @@ fun AppearanceScreen(
     var overflowOpen by remember { mutableStateOf(false) }
     // Snackbar 文案在 @Composable 作用域先取好（协程里不能调 stringResource）。
     val resetDoneMsg = stringResource(R.string.reset_done)
-    // 恢复默认会覆盖字体 / 配色 / 字号 / 光标：危险操作统一二次确认，不提供"撤销"。
+    // Reset changes color scheme, typography and cursor; confirm before applying.
     var confirmReset by remember { mutableStateOf(false) }
     if (confirmReset) {
         ConfirmDialog(
@@ -232,8 +191,6 @@ fun AppearanceScreen(
             AppearancePreview(
                 // 预览必须跟"眼下真正生效"的那套一致，否则联动开启时改一个下拉、预览却不动。
                 schemeId = effectiveSchemeId,
-                primaryFontId = primaryFontId,
-                fallbackFontId = fallbackFontId,
                 fontSizeSp = fontSizeSp,
                 lineSpacing = lineSpacing,
                 letterSpacing = letterSpacing,
@@ -285,25 +242,8 @@ fun AppearanceScreen(
                 }
 
                 SectionHeader(stringResource(R.string.section_font))
-                RichDropdown(
-                    label = stringResource(R.string.primary_font),
-                    options = primaryOptions,
-                    selectedId = primaryFontId,
-                    onSelect = onSelectPrimary,
-                )
-                RichDropdown(
-                    label = stringResource(R.string.fallback_font),
-                    options = fallbackOptions,
-                    selectedId = fallbackFontId,
-                    onSelect = onSelectFallback,
-                )
-                // 常驻入口：进入字体管理下载/上传/设角色（与设置菜单同款 NavRow）。
-                NavRow(
-                    icon = Icons.Filled.FontDownload,
-                    title = stringResource(R.string.font_manage_title),
-                    subtitle = stringResource(R.string.font_manage_sub),
-                    onClick = onOpenFonts,
-                )
+                Text(stringResource(R.string.font_maple_only), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(12.dp))
 
                 SectionHeader(stringResource(R.string.section_typography))
                 // 字号 0.5 步进；行距/字距 0.1 步进。滑块快调 + ± 精调。
@@ -471,14 +411,12 @@ private fun SchemeSwatches(s: TermColorScheme) {
 @Composable
 private fun AppearancePreview(
     schemeId: String,
-    primaryFontId: String,
-    fallbackFontId: String,
     fontSizeSp: Float,
     lineSpacing: Float,
     letterSpacing: Float,
     cursorStyle: Int,
     cursorBlink: Boolean,
-    resolveTypeface: (String, String) -> Typeface,
+    resolveTypeface: () -> Typeface,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -496,7 +434,7 @@ private fun AppearancePreview(
         controller.cursorBlink = cursorBlink
         val px = Math.round(fontSizeSp * density)
         view.setTextSize(px)
-        view.setTypeface(resolveTypeface(primaryFontId, fallbackFontId))
+        view.setTypeface(resolveTypeface())
         view.setFontSpacing(lineSpacing, letterSpacingEm(letterSpacing))
         view.attachSession(session)
         onDispose {
@@ -505,12 +443,6 @@ private fun AppearancePreview(
         }
     }
 
-    // 字号/字距/字体改列数 → 内核 reflow 会丢弃色带这类"全空格"行 → 每次重绘样张兜住（内容顶格、色带常在）。
-    LaunchedEffect(primaryFontId, fallbackFontId) {
-        view.setTypeface(resolveTypeface(primaryFontId, fallbackFontId))
-        PreviewTransport.redraw(session)
-        view.onScreenUpdated()
-    }
     LaunchedEffect(fontSizeSp) {
         view.setTextSize(Math.round(fontSizeSp * density))
         PreviewTransport.redraw(session)

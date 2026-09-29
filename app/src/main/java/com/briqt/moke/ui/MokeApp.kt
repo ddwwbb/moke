@@ -1,6 +1,8 @@
 package com.briqt.moke.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.briqt.moke.terminal.TerminalAlerts
@@ -29,8 +31,6 @@ import com.briqt.moke.data.Host
 import com.briqt.moke.data.KeyboardMode
 import com.briqt.moke.data.ThemeMode
 import com.briqt.moke.terminal.Tmux
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 
 /** 底部导航分区。 */
 enum class HomeTab { Connections, Sessions, Settings }
@@ -45,7 +45,6 @@ sealed interface Screen {
     data class Terminal(val sessionId: String) : Screen
     data object Appearance : Screen
     data object TerminalSettings : Screen
-    data object Fonts : Screen
     data object About : Screen
     data object HostMigration : Screen
 
@@ -74,19 +73,14 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
     val lightSchemeId by vm.lightColorSchemeId.collectAsState()
     val schemeFollowsTheme by vm.schemeFollowsTheme.collectAsState()
     val effectiveSchemeId by vm.effectiveSchemeId.collectAsState()
-    val primaryFontId by vm.primaryFontId.collectAsState()
-    val fallbackFontId by vm.fallbackFontId.collectAsState()
-    val fontCatalog by vm.fontCatalog.collectAsState()
-    val fontStates by vm.fontStates.collectAsState()
-    val importError by vm.importError.collectAsState()
-    val importing by vm.importing.collectAsState()
-    val importSuccess by vm.importSuccess.collectAsState()
     val fontSizeSp by vm.fontSizeSp.collectAsState()
     val lineSpacing by vm.lineSpacing.collectAsState()
     val letterSpacing by vm.letterSpacing.collectAsState()
     val cursorStyle by vm.cursorStyle.collectAsState()
     val cursorBlink by vm.cursorBlink.collectAsState()
     val extraKeysVisible by vm.extraKeysVisible.collectAsState()
+    val extraKeysLayout by vm.extraKeysLayout.collectAsState()
+    val customExtraKeyIds by vm.customExtraKeyIds.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
     val dynamicColor by vm.dynamicColor.collectAsState()
     val keyboardMode by vm.keyboardMode.collectAsState()
@@ -140,7 +134,6 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
     }
     BackHandler(enabled = backEnabled) {
         when (screen) {
-            is Screen.Fonts -> screen = Screen.Appearance
             is Screen.Appearance -> { screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.TerminalSettings -> { screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.About -> { screen = Screen.Home; homeTab = HomeTab.Settings }
@@ -226,8 +219,6 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
                     }
                     TerminalScreen(
                         ts = ts,
-                        primaryFontId = primaryFontId,
-                        fallbackFontId = fallbackFontId,
                         fontSizeSp = fontSizeSp,
                         lineSpacing = lineSpacing,
                         letterSpacing = letterSpacing,
@@ -235,6 +226,8 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
                         cursorBlink = cursorBlink,
                         schemeId = effectiveSchemeId,
                         extraKeysVisible = extraKeysVisible,
+                        extraKeysLayout = extraKeysLayout,
+                        customExtraKeyIds = customExtraKeyIds,
                         keyboardMode = keyboardMode,
                         scrollMode = scrollMode,
                         confirmClose = confirmClose,
@@ -261,6 +254,8 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
                         onKeyboardMode = { vm.setKeyboardMode(it) },
                         onScrollMode = { vm.setScrollMode(it) },
                         onToggleExtraKeys = { vm.setExtraKeysVisible(!extraKeysVisible) },
+                        onExtraKeysLayout = vm::setExtraKeysLayout,
+                        onCustomExtraKeyIds = vm::setCustomExtraKeyIds,
                         onTmuxRefresh = { vm.refreshTmux(ts) },
                         onTmuxNew = { vm.tmuxNew(ts, it) },
                         onTmuxRename = { id, name -> vm.tmuxRename(ts, id, name) },
@@ -303,10 +298,6 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             lightSchemeId = lightSchemeId,
             schemeFollowsTheme = schemeFollowsTheme,
             effectiveSchemeId = effectiveSchemeId,
-            primaryFontId = primaryFontId,
-            fallbackFontId = fallbackFontId,
-            fonts = fontCatalog,
-            fontStates = fontStates,
             fontSizeSp = fontSizeSp,
             lineSpacing = lineSpacing,
             letterSpacing = letterSpacing,
@@ -316,34 +307,13 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             onSelectScheme = { vm.setColorScheme(it) },
             onSelectLightScheme = { vm.setLightColorScheme(it) },
             onSchemeFollowsTheme = { vm.setSchemeFollowsTheme(it) },
-            onSelectPrimary = { vm.setPrimaryFont(it) },
-            onSelectFallback = { vm.setFallbackFont(it) },
             onFontSize = { vm.setFontSize(it) },
             onLineSpacing = { vm.setLineSpacing(it) },
             onLetterSpacing = { vm.setLetterSpacing(it) },
             onCursorStyle = { vm.setCursorStyle(it) },
             onCursorBlink = { vm.setCursorBlink(it) },
             onResetDefaults = { vm.resetAppearanceDefaults() },
-            onOpenFonts = { screen = Screen.Fonts },
             onBack = { screen = Screen.Home; homeTab = HomeTab.Settings },
-        )
-
-        is Screen.Fonts -> FontsScreen(
-            primaryId = primaryFontId,
-            fallbackId = fallbackFontId,
-            fonts = fontCatalog,
-            states = fontStates,
-            onDownload = { vm.downloadFont(it) },
-            onDelete = { vm.deleteFont(it) },
-            onSetPrimary = { vm.setPrimaryFont(it) },
-            onSetFallback = { vm.setFallbackFont(it) },
-            onImport = { vm.importFont(it) },
-            importError = importError,
-            onClearImportError = { vm.clearImportError() },
-            importing = importing,
-            importSuccess = importSuccess,
-            onClearImportSuccess = { vm.clearImportSuccess() },
-            onBack = { screen = Screen.Appearance },
         )
 
         is Screen.TerminalSettings -> TerminalSettingsScreen(

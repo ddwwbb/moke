@@ -9,27 +9,21 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.briqt.moke.terminal.FontCatalog
 import com.briqt.moke.terminal.TerminalThemes
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
-import org.json.JSONObject
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "moke_settings")
 
-/** 用户上传的本地字体记录（文件存于 filesDir/fonts/<id>.ttf）。 */
-data class UserFont(val id: String, val name: String)
 
-/** 应用设置持久化：配色方案 + 终端主字体/回退字体。 */
+/** 应用设置持久化：配色方案 + 终端字号等偏好。 */
 class SettingsStore(private val context: Context) {
 
     private val colorSchemeKey = stringPreferencesKey("color_scheme_id")
     // 配色随明暗联动：开关 + 浅色模式专用方案（深色模式沿用 colorSchemeKey，保持老数据语义不变）。
     private val lightColorSchemeKey = stringPreferencesKey("color_scheme_id_light")
     private val schemeFollowsThemeKey = booleanPreferencesKey("scheme_follows_theme")
-    private val primaryFontKey = stringPreferencesKey("primary_font_id")
-    private val fallbackFontKey = stringPreferencesKey("fallback_font_id")
     private val fontSizeKeyInt = intPreferencesKey("font_size_sp")     // 旧键（Int），仅用于迁移读取
     private val fontSizeKey = floatPreferencesKey("font_size_sp_f")    // 新键（Float，支持 0.5 步进）
     private val cursorStyleKey = intPreferencesKey("cursor_style")
@@ -42,8 +36,9 @@ class SettingsStore(private val context: Context) {
     private val sessionSortByKey = stringPreferencesKey("session_sort_by")
     private val lineSpacingKey = floatPreferencesKey("line_spacing_mul")
     private val letterSpacingKey = floatPreferencesKey("letter_spacing_mul")
-    private val userFontsKey = stringPreferencesKey("user_fonts")
     private val extraKeysVisibleKey = booleanPreferencesKey("extra_keys_visible")
+    private val extraKeysLayoutKey = stringPreferencesKey("extra_keys_layout")
+    private val customExtraKeysKey = stringPreferencesKey("custom_extra_keys")
     // 外观（应用层，与终端配色相互独立）：明暗模式 + 是否取系统壁纸动态色（Android 12+）。
     private val themeModeKey = stringPreferencesKey("theme_mode")
     private val dynamicColorKey = booleanPreferencesKey("dynamic_color")
@@ -76,13 +71,6 @@ class SettingsStore(private val context: Context) {
         const val DEFAULT_SPACING = 1.0f
         const val MIN_SPACING = 0.7f
         const val MAX_SPACING = 1.3f
-        // 默认字体（"恢复默认"目标；与 FontCatalog 保持一致）。
-        // maple 发行变体自带 Maple Mono NF CN 并作为默认中文回退；standard 用内置思源黑体子集。
-        val DEFAULT_FALLBACK_FONT_ID: String =
-            if (com.briqt.moke.BuildConfig.BUNDLE_MAPLE) "maple_mono" else "noto_sans_sc"
-        /** 主字体默认：maple 变体直接用 Maple（中英等宽统一字重）；standard 用 JetBrains Mono。 */
-        val DEFAULT_PRIMARY_FONT_ID: String =
-            if (com.briqt.moke.BuildConfig.BUNDLE_MAPLE) "maple_mono" else FontCatalog.DEFAULT_ID
 
         /** 把任意字号规整到 0.5 网格并夹到范围内（避免浮点漂移）。 */
         fun snapFontSize(v: Float): Float =
@@ -104,15 +92,6 @@ class SettingsStore(private val context: Context) {
         prefs[schemeFollowsThemeKey] ?: false
     }
 
-    /** 主字体 id（maple 变体默认 Maple Mono 统一中西字重；standard 默认 JetBrains Mono）。 */
-    val primaryFontId: Flow<String> = context.settingsDataStore.data.map { prefs ->
-        prefs[primaryFontKey] ?: DEFAULT_PRIMARY_FONT_ID
-    }
-
-    /** 回退字体 id（默认内置思源黑体子集，中文开箱好看；空串 = 走系统）。 */
-    val fallbackFontId: Flow<String> = context.settingsDataStore.data.map { prefs ->
-        prefs[fallbackFontKey] ?: DEFAULT_FALLBACK_FONT_ID
-    }
 
     /** 终端字号（sp，Float 支持 0.5 步进）。新键缺失时迁移旧 Int 键。 */
     val fontSizeSp: Flow<Float> = context.settingsDataStore.data.map { prefs ->
@@ -133,6 +112,18 @@ class SettingsStore(private val context: Context) {
     /** 终端底部附加键是否显示（默认显示）。 */
     val extraKeysVisible: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
         prefs[extraKeysVisibleKey] ?: true
+    }
+
+    val extraKeysLayout: Flow<ExtraKeysLayout> = context.settingsDataStore.data.map { prefs ->
+        ExtraKeysLayout.fromName(prefs[extraKeysLayoutKey])
+    }
+
+    val customExtraKeyIds: Flow<List<String>> = context.settingsDataStore.data.map { prefs ->
+        val raw = prefs[customExtraKeysKey] ?: return@map emptyList()
+        runCatching {
+            val array = JSONArray(raw)
+            List(array.length()) { array.getString(it) }
+        }.getOrDefault(emptyList())
     }
 
     /** 应用明暗主题（默认跟随系统）。 */
@@ -246,13 +237,6 @@ class SettingsStore(private val context: Context) {
         context.settingsDataStore.edit { it[schemeFollowsThemeKey] = on }
     }
 
-    suspend fun setPrimaryFont(id: String) {
-        context.settingsDataStore.edit { it[primaryFontKey] = id }
-    }
-
-    suspend fun setFallbackFont(id: String) {
-        context.settingsDataStore.edit { it[fallbackFontKey] = id }
-    }
 
     suspend fun setFontSize(sp: Float) {
         context.settingsDataStore.edit { it[fontSizeKey] = snapFontSize(sp) }
@@ -289,6 +273,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setExtraKeysVisible(visible: Boolean) {
         context.settingsDataStore.edit { it[extraKeysVisibleKey] = visible }
+    }
+
+    suspend fun setExtraKeysLayout(layout: ExtraKeysLayout) {
+        context.settingsDataStore.edit { it[extraKeysLayoutKey] = layout.name }
+    }
+
+    suspend fun setCustomExtraKeyIds(ids: List<String>) {
+        context.settingsDataStore.edit { it[customExtraKeysKey] = JSONArray(ids).toString() }
     }
 
     suspend fun setThemeMode(m: ThemeMode) {
@@ -330,14 +322,12 @@ class SettingsStore(private val context: Context) {
         context.settingsDataStore.edit { it[terminalAlertsKey] = on }
     }
 
-    /** 恢复外观默认：配色 / 主字体 / 回退字体 / 字号 / 行距 / 字间距 / 光标（单次事务）。 */
+    /** 恢复外观默认：配色 / 字号 / 行距 / 字间距 / 光标（单次事务）。 */
     suspend fun resetAppearanceDefaults() {
         context.settingsDataStore.edit { prefs ->
             prefs[colorSchemeKey] = TerminalThemes.DEFAULT_ID
             prefs[lightColorSchemeKey] = TerminalThemes.DEFAULT_LIGHT_ID
             prefs[schemeFollowsThemeKey] = false
-            prefs[primaryFontKey] = DEFAULT_PRIMARY_FONT_ID
-            prefs[fallbackFontKey] = DEFAULT_FALLBACK_FONT_ID
             prefs[fontSizeKey] = DEFAULT_FONT_SIZE_SP
             prefs[lineSpacingKey] = DEFAULT_SPACING
             prefs[letterSpacingKey] = DEFAULT_SPACING
@@ -346,41 +336,6 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    /** 用户上传字体清单。 */
-    val userFonts: Flow<List<UserFont>> = context.settingsDataStore.data.map { prefs ->
-        parseUserFonts(prefs[userFontsKey])
-    }
-
-    suspend fun addUserFont(font: UserFont) {
-        context.settingsDataStore.edit { prefs ->
-            val list = parseUserFonts(prefs[userFontsKey]).toMutableList()
-            if (list.none { it.id == font.id }) list.add(font)
-            prefs[userFontsKey] = encodeUserFonts(list)
-        }
-    }
-
-    suspend fun removeUserFont(id: String) {
-        context.settingsDataStore.edit { prefs ->
-            prefs[userFontsKey] = encodeUserFonts(parseUserFonts(prefs[userFontsKey]).filterNot { it.id == id })
-        }
-    }
-
-    private fun parseUserFonts(s: String?): List<UserFont> {
-        if (s.isNullOrBlank()) return emptyList()
-        return runCatching {
-            val arr = JSONArray(s)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                UserFont(o.getString("id"), o.getString("name"))
-            }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun encodeUserFonts(list: List<UserFont>): String {
-        val arr = JSONArray()
-        list.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name)) }
-        return arr.toString()
-    }
 
     /** 字符串列表 JSON 编解码（分组顺序 / 折叠集合用）。 */
     private fun encodeStringList(list: List<String>): String {
