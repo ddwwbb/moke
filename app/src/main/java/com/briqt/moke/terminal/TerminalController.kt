@@ -21,6 +21,7 @@ class TerminalController(
     context: Context,
     private val onFinished: () -> Unit = {},
     private val onTitle: (String?) -> Unit = {},
+    private val onCwd: (String, String) -> Unit = { _, _ -> },
 ) : TerminalViewClient, TerminalSessionClient {
 
     /** 有终端输出/屏幕更新时回调（供上层刷新会话"最后活动时间"）。 */
@@ -76,6 +77,9 @@ class TerminalController(
     override fun onBell(session: TerminalSession) { onAlert?.invoke(null, null) }
 
     override fun onNotification(session: TerminalSession, title: String?, body: String?) { onAlert?.invoke(title, body) }
+
+    /** OSC 7 上报的 shell 当前目录（Git 改动解析链第 1 级）。 */
+    override fun onCwdReported(session: TerminalSession, host: String, path: String) { onCwd(host, path) }
     override fun onColorsChanged(session: TerminalSession) { view?.onScreenUpdated() }
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}

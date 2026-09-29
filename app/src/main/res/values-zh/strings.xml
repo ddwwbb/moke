@@ -431,7 +431,10 @@
     <string name="git_diff_not_repo">该目录不是 Git 仓库</string>
     <string name="git_diff_not_installed">远端服务器未安装 Git</string>
     <string name="git_diff_truncated">改动较多，仅展示前 128 KB 差异</string>
-    <string name="git_diff_no_project_path">当前主机未配置项目目录</string>
+    <string name="git_diff_no_project_path">未找到项目目录：请在主机设置中配置，或经应用的 tmux 面板附加会话</string>
+    <string name="git_diff_configure_project">配置项目目录</string>
+    <string name="git_diff_tmux_probe_failed">未能获取 tmux 会话目录，请稍后重试或直接配置项目目录</string>
+    <string name="git_diff_exec_failed">无法在远端执行命令，请检查连接后重试</string>
     <string name="git_diff_stat">%1$d 个文件修改 · +%2$d -%3$d</string>
     <string name="git_status_modified">修改</string>
     <string name="git_status_added">新增</string>

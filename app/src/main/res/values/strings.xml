@@ -435,7 +435,10 @@ Its saved password / private key and host fingerprint are removed too. This can\
     <string name="git_diff_not_repo">Directory is not a Git repository</string>
     <string name="git_diff_not_installed">Git is not installed on remote server</string>
     <string name="git_diff_truncated">Large diff, truncated to first 128 KB</string>
-    <string name="git_diff_no_project_path">No project directory configured for this host</string>
+    <string name="git_diff_no_project_path">No project directory found: configure one in host settings, or attach a session via the in-app tmux panel</string>
+    <string name="git_diff_configure_project">Configure project directory</string>
+    <string name="git_diff_tmux_probe_failed">Could not read the tmux session directory. Retry later or configure a project directory</string>
+    <string name="git_diff_exec_failed">Could not run the command on the remote host. Check the connection and retry</string>
     <string name="git_diff_stat">%1$d files changed · +%2$d -%3$d</string>
     <string name="git_status_modified">Modified</string>
     <string name="git_status_added">Added</string>

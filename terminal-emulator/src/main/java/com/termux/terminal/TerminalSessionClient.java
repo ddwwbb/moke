@@ -52,4 +52,8 @@ public interface TerminalSessionClient {
     /** [moke] Remote program requested a desktop notification (OSC 9 / OSC 777). [title] may be null. */
     default void onNotification(@NonNull TerminalSession session, String title, String body) {
     }
+
+    /** [moke] OSC 7 file URL authority and decoded absolute path; consumer must verify host. */
+    default void onCwdReported(@NonNull TerminalSession session, String host, String path) {
+    }
 }

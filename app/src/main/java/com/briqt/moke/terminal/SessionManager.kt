@@ -56,6 +56,8 @@ class TermSession(
     val remoteTmuxId: MutableStateFlow<String?>,
     /** tmux 跨连接恢复身份；ID 随 server 重启变化时用名称重新收敛。 */
     val remoteTmuxName: MutableStateFlow<String?>,
+    /** OSC 7 上报的 shell 当前目录；远端未上报时为 null。 */
+    val lastReportedCwd: MutableStateFlow<String?>,
     val startedAt: Long,
 ) {
     /** 最终展示标题：customTitle 优先；复制标记仅作临时冲突消歧。 */
@@ -168,12 +170,17 @@ class SessionManager(context: Context) {
         val displayTitle = MutableStateFlow(initialDisplay)
         val alive = MutableStateFlow(true)
         val latency = MutableStateFlow<Int?>(null)
+        val lastReportedCwd = MutableStateFlow<String?>(null)
         val controller = TerminalController(
             context = appContext,
             onFinished = { alive.value = false; latency.value = null },
             // 空标题（远端程序退出时常发的空 OSC）当作「清除」处理，回落基座；
             // 早期实现直接忽略，结果标题一直挂着上一个程序的名字。
             onTitle = { t -> title.value = if (t.isNullOrBlank()) titleBase else t },
+            // 不把嵌套 SSH 的 cwd 拿到原主机执行 Git；失配时清除上一次报告。
+            onCwd = { reportedHost, cwd ->
+                lastReportedCwd.value = cwd.takeIf { reportedHost.isNotEmpty() && reportedHost.equals(host.host, ignoreCase = true) }
+            },
         )
         // 传输选择：偏好 mosh 的主机走 MoshTransport（SSH 引导 + native mosh-client 子进程 PTY），
         // 否则走 SshTransport（并周期探测 RTT 供状态条显示）。
@@ -206,6 +213,7 @@ class SessionManager(context: Context) {
             copyMark = mark,
             remoteTmuxId = MutableStateFlow(remoteTmuxId),
             remoteTmuxName = MutableStateFlow(remoteTmuxName),
+            lastReportedCwd = lastReportedCwd,
             startedAt = System.currentTimeMillis(),
         )
         // 结束文案按本会话的真实处境说：确认附加在 tmux 上、又是正常退出（detach 就是 code 0），

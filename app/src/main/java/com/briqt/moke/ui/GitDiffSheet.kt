@@ -23,9 +23,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -72,6 +75,7 @@ fun GitDiffSheet(
     result: GitDiffResult?,
     loading: Boolean,
     onDismiss: () -> Unit,
+    onConfigureProject: () -> Unit,
 ) {
     if (result == null && !loading) return
 
@@ -175,6 +179,23 @@ fun GitDiffSheet(
                             tint = MaterialTheme.colorScheme.error,
                             text = stringResource(R.string.git_diff_not_repo),
                         )
+                    }
+
+                    result is GitDiffResult.NoProjectPath -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            EmptyStateView(
+                                icon = Icons.Filled.Folder,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = stringResource(R.string.git_diff_no_project_path),
+                            )
+                            Button(onClick = onConfigureProject) {
+                                Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text("  " + stringResource(R.string.git_diff_configure_project))
+                            }
+                        }
                     }
 
                     result is GitDiffResult.GitNotInstalled -> {

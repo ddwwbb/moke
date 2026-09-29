@@ -48,6 +48,7 @@ sealed interface GitDiffResult {
     data object Empty : GitDiffResult
     data object NotGitRepo : GitDiffResult
     data object GitNotInstalled : GitDiffResult
+    data object NoProjectPath : GitDiffResult
     data class Error(val message: String) : GitDiffResult
 }
 
@@ -68,24 +69,54 @@ object GitDiff {
      * - head -c 严格限制输出大小
      * - 零副作用、不执行任何写操作
      */
-    fun diffCommand(projectPath: String): String {
-        val safeDir = q(projectPath.trimEnd('/'))
-        return "sh -c '" +
-            "if ! command -v git >/dev/null 2>&1; then " +
-            "echo \"$TAG_MISSING\"; exit 0; " +
-            "fi; " +
-            "if [ ! -d $safeDir ]; then " +
-            "echo \"$TAG_NOT_REPO\"; exit 0; " +
-            "fi; " +
-            "cd $safeDir || exit 0; " +
-            "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then " +
-            "echo \"$TAG_NOT_REPO\"; exit 0; " +
-            "fi; " +
-            "echo \"$TAG_READY\"; " +
-            "git -c core.quotepath=false status --porcelain=v1 -uall 2>/dev/null; " +
-            "echo \"$DELIM_DIFF\"; " +
-            "git -c core.quotepath=false diff --no-color -U2 HEAD 2>/dev/null | head -c $MAX_DIFF_BYTES; " +
-            "echo \"\"' "
+    fun diffCommand(projectPath: String): String = "sh -c '" +
+        "if ! command -v git >/dev/null 2>&1; then " +
+        "echo \"$TAG_MISSING\"; exit 0; " +
+        "fi; " +
+        "if [ ! -d \"\$1\" ]; then " +
+        "echo \"$TAG_NOT_REPO\"; exit 0; " +
+        "fi; " +
+        "cd \"\$1\" || exit 0; " +
+        "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then " +
+        "echo \"$TAG_NOT_REPO\"; exit 0; " +
+        "fi; " +
+        "echo \"$TAG_READY\"; " +
+        "git -c core.quotepath=false status --porcelain=v1 -uall 2>/dev/null; " +
+        "echo \"$DELIM_DIFF\"; " +
+        "git -c core.quotepath=false diff --no-color -U2 HEAD 2>/dev/null | head -c $MAX_DIFF_BYTES; " +
+        "echo \"\"' sh ${q(projectPath)}"
+
+    /** 目录定位失败：区分确实无线索和管理通道执行失败。 */
+    sealed interface DirResolution {
+        data class Dir(val path: String) : DirResolution
+        data object Missing : DirResolution
+        data object ProbeFailed : DirResolution
+    }
+
+    /** OSC 7 路径不得改写；保存的主机路径已由编辑页验证和规范化。 */
+    fun preferredDir(osc7Cwd: String?, projectPath: String): String? =
+        absoluteDir(osc7Cwd) ?: absoluteDir(projectPath)
+
+    /** 路径中的空格是有效文件名；只验证，绝不隐式改写 cwd。 */
+    private fun absoluteDir(path: String?): String? =
+        path?.takeIf { it.startsWith('/') && !it.contains('\n') && !it.contains('\r') && !it.contains('\u0000') }
+
+    /** 保留显式来源优先级；失效的关联 tmux 不得退而猜测另一会话。 */
+    fun resolveTargetDir(
+        osc7Cwd: String?,
+        projectPath: String,
+        tmuxName: String?,
+        namedProbeOut: String?,
+        sessionsProbeOut: String?,
+    ): DirResolution {
+        preferredDir(osc7Cwd, projectPath)?.let { return DirResolution.Dir(it) }
+        if (!tmuxName.isNullOrBlank()) {
+            if (namedProbeOut == null) return DirResolution.ProbeFailed
+            val panePath = namedProbeOut.removeSuffix("\r\n").removeSuffix("\n")
+            return absoluteDir(panePath)?.let(DirResolution::Dir) ?: DirResolution.Missing
+        }
+        if (sessionsProbeOut == null || sessionsProbeOut.startsWith("__MOKE_TMUX__:failed")) return DirResolution.ProbeFailed
+        return Tmux.parseSessionCwds(sessionsProbeOut)?.let(DirResolution::Dir) ?: DirResolution.Missing
     }
 
     /**

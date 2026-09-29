@@ -142,6 +142,7 @@ fun TerminalScreen(
     gitDiffResult: GitDiffResult? = null,
     gitDiffLoading: Boolean = false,
     onOpenGitDiff: () -> Unit = {},
+    onConfigureGitProject: () -> Unit = {},
     onDismissGitDiff: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -631,6 +632,7 @@ fun TerminalScreen(
         result = gitDiffResult,
         loading = gitDiffLoading,
         onDismiss = onDismissGitDiff,
+        onConfigureProject = onConfigureGitProject,
     )
 }
 

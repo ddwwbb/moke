@@ -65,6 +65,16 @@ public abstract class TerminalTestCase extends TestCase {
 		public void onNotification(String title, String body) {
 			notifications.add(new String[]{title, body});
 		}
+
+        /** [moke] Last OSC 7 hostname and reported working directory. */
+        public String lastCwdHost;
+        public String lastCwd;
+
+        @Override
+        public void onCwdReported(String host, String path) {
+            lastCwdHost = host;
+            lastCwd = path;
+        }
 	}
 
 	public TerminalEmulator mTerminal;

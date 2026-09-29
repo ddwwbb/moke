@@ -29,6 +29,22 @@ class TmuxTest {
     }
 
     @Test
+    fun `single session cwd heuristic picks the only session`() {
+        assertEquals("/only/repo", Tmux.parseSessionCwds("main:/only/repo\n"))
+        assertEquals("/srv/my repo", Tmux.parseSessionCwds("my work:/srv/my repo\n"))
+    }
+
+    @Test
+    fun `multiple or malformed session lines cannot select another repository`() {
+        assertEquals(null, Tmux.parseSessionCwds("a:/one\nb:/two\n"))
+        assertEquals(null, Tmux.parseSessionCwds("a:/one\nmalformed\n"))
+        assertEquals(null, Tmux.parseSessionCwds(""))
+        assertEquals(null, Tmux.parseSessionCwds("garbage"))
+        assertEquals("/home/user/my:project", Tmux.parseSessionCwds("main:/home/user/my:project\n"))
+        assertEquals("/srv/repo ", Tmux.parseSessionCwds("main:/srv/repo \n"))
+    }
+
+    @Test
     fun `keeps cjk names`() {
         val result = Tmux.parseDiscovery("__MOKE_TMUX__:ready\n\$1:小说写作:1:0:1784450386")
             as TmuxDiscovery.Ready

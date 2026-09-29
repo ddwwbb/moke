@@ -271,6 +271,11 @@ public class TerminalSession extends TerminalOutput {
     }
 
     @Override
+    public void onCwdReported(String host, String path) {
+        if (mClient != null) mClient.onCwdReported(this, host, path);
+    }
+
+    @Override
     public void onColorsChanged() {
         if (mClient != null) mClient.onColorsChanged(this);
     }

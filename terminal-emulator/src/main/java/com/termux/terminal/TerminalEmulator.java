@@ -2,6 +2,7 @@ package com.termux.terminal;
 
 import android.util.Base64;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
@@ -2123,6 +2124,21 @@ public final class TerminalEmulator {
                 // "9;<n>;..." with a leading numeric sub-command is ConEmu's extension set (e.g. "9;4;..." is a
                 // progress report, emitted continuously by some programs) — those are not notifications.
                 if (!textParameter.matches("[0-9]+(;.*)?")) mSession.onNotification(null, textParameter);
+                break;
+            case 7: // [moke] OSC 7 current working directory: "7;file://host/path".
+                if (textParameter.startsWith("file://")) {
+                    try {
+                        URI cwdUri = URI.create(textParameter);
+                        String cwd = cwdUri.getPath();
+                        String authority = cwdUri.getRawAuthority();
+                        if (cwd != null && cwd.startsWith("/") && cwdUri.getRawQuery() == null &&
+                            cwdUri.getRawFragment() == null && cwdUri.getUserInfo() == null && cwdUri.getPort() == -1 &&
+                            (authority == null || authority.isEmpty() || cwdUri.getHost() != null))
+                            mSession.onCwdReported(cwdUri.getHost() == null ? "" : cwdUri.getHost(), cwd);
+                    } catch (IllegalArgumentException e) {
+                        // Invalid URL/percent escapes do not replace the last known cwd.
+                    }
+                }
                 break;
             case 777: // [moke] rxvt-unicode notify extension: "777;notify;title;body".
                 String[] parts = textParameter.split(";", 3);

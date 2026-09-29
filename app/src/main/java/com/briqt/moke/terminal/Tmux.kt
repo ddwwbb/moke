@@ -272,6 +272,24 @@ object Tmux {
     fun paneCwdCmd(name: String) =
         "tmux display-message -p -t ${q(name)} '#{pane_current_path}' 2>/dev/null || true"
 
+    /** 无 tmux/无会话/列表失败单独标记，避免把管理通道失败报成主机没配目录。 */
+    fun sessionCwdsCmd() =
+        "if ! command -v tmux >/dev/null 2>&1; then printf '__MOKE_TMUX__:missing\\n'; " +
+            "elif ! tmux has-session 2>/dev/null; then printf '__MOKE_TMUX__:empty\\n'; " +
+            "else tmux -u list-sessions -F '#{session_name}:#{pane_current_path}' 2>/dev/null || " +
+            "printf '__MOKE_TMUX__:failed\\n'; fi"
+
+    /** 没有会话返回 null；完整的单行绝对目录才可作为候选。 */
+    fun parseSessionCwds(out: String): String? {
+        val lines = out.lineSequence().filter { it.isNotEmpty() }.iterator()
+        if (!lines.hasNext()) return null
+        val line = lines.next().removeSuffix("\r")
+        if (lines.hasNext()) return null
+        val sep = line.indexOf(':')
+        if (sep <= 0) return null
+        return line.substring(sep + 1).takeIf { it.startsWith('/') && !it.contains('\r') && !it.contains('\u0000') }
+    }
+
     /**
      * 附加确认：数一下该会话当前的 tmux 客户端。attach 命令发出不等于附加成功（TERM 不可用、
      * tmux 启动失败都会回落登录壳），不核对就会出现「UI 说在 tmux 里、其实是普通 shell」。

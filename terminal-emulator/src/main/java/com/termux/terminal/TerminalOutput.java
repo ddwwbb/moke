@@ -36,4 +36,8 @@ public abstract class TerminalOutput {
     public void onNotification(String title, String body) {
     }
 
+    /** [moke] OSC 7 file URL authority and decoded absolute path; consumers verify authority. */
+    public void onCwdReported(String host, String path) {
+    }
+
 }

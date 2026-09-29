@@ -294,34 +294,50 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
         _gitDiffLoading.value = true
         _gitDiffResult.value = null
 
-        var targetDir = ts.host.projectPath.trim().trimEnd('/')
-        if (targetDir.isBlank()) {
-            val name = ts.remoteTmuxName.value
-            if (!name.isNullOrBlank()) {
-                val out = runCatching { ts.transport.exec(Tmux.paneCwdCmd(name)) }.getOrNull()?.trim().orEmpty()
-                if (out.startsWith("/")) targetDir = out
-            }
-        }
+        // ts.host 是打开时的快照；从 DataStore 读取最新配置，也覆盖刚保存后 StateFlow 尚未更新的窗口。
+        val host = store.hosts.first().firstOrNull { it.id == ts.host.id } ?: ts.host
+        val projectPath = host.projectPath
+        val tmuxName = ts.remoteTmuxName.value
 
-        if (targetDir.isBlank()) {
-            _gitDiffLoading.value = false
-            _gitDiffResult.value = GitDiffResult.Error(str(R.string.git_diff_no_project_path))
-            return@launch
-        }
+        fun execOrNull(cmd: String): String? =
+            runCatching { ts.transport.exec(cmd) }.getOrNull()
 
-        val out = runCatching {
-            ts.transport.exec(GitDiff.diffCommand(targetDir))
-        }.getOrNull()
+        // OSC 7/主机配置命中时零探测；关联 tmux 失效不猜测另一会话的目录。
+        val preferred = GitDiff.preferredDir(ts.lastReportedCwd.value, projectPath)
+        val namedProbe = if (preferred == null && !tmuxName.isNullOrBlank()) {
+            execOrNull(Tmux.paneCwdCmd(tmuxName))
+        } else null
+        val sessionsProbe = if (preferred == null && tmuxName.isNullOrBlank()) {
+            execOrNull(Tmux.sessionCwdsCmd())
+        } else null
+        val dir = GitDiff.resolveTargetDir(
+            osc7Cwd = ts.lastReportedCwd.value,
+            projectPath = projectPath,
+            tmuxName = tmuxName,
+            namedProbeOut = namedProbe,
+            sessionsProbeOut = sessionsProbe,
+        )
+
+        val result = when (dir) {
+            is GitDiff.DirResolution.Dir ->
+                execOrNull(GitDiff.diffCommand(dir.path))?.let(GitDiff::parse)
+                    ?: GitDiffResult.Error(str(R.string.git_diff_exec_failed))
+            GitDiff.DirResolution.Missing -> GitDiffResult.NoProjectPath
+            GitDiff.DirResolution.ProbeFailed -> GitDiffResult.Error(
+                str(if (tmuxName.isNullOrBlank()) R.string.git_diff_exec_failed else R.string.git_diff_tmux_probe_failed)
+            )
+        }
 
         _gitDiffLoading.value = false
-        if (out == null) {
-            _gitDiffResult.value = GitDiffResult.Error(str(R.string.tmux_control_unavailable))
-        } else {
-            _gitDiffResult.value = GitDiff.parse(out)
-        }
+        _gitDiffResult.value = result
     }
 
     fun save(host: Host) = viewModelScope.launch { store.upsert(host, hosts.value) }
+
+    /** 终端内只修改项目目录；单主机事务避免旧编辑页快照覆盖并发更新的其它配置。 */
+    fun saveProjectPath(host: Host, onSaved: () -> Unit) = viewModelScope.launch {
+        if (store.update(host.id) { it.copy(projectPath = host.projectPath) }) onSaved()
+    }
 
     fun delete(host: Host) = viewModelScope.launch {
         store.delete(host, hosts.value)

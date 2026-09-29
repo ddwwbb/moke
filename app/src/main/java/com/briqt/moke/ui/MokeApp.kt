@@ -41,7 +41,7 @@ enum class HomeTab { Connections, Sessions, Settings }
  */
 sealed interface Screen {
     data object Home : Screen
-    data class Edit(val host: Host?) : Screen
+    data class Edit(val host: Host?, val returnToSessionId: String? = null) : Screen
     data class Terminal(val sessionId: String) : Screen
     data object Appearance : Screen
     data object TerminalSettings : Screen
@@ -138,7 +138,7 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             is Screen.TerminalSettings -> { screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.About -> { screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.HostMigration -> if (!migrationBusy) { vm.clearHostMigration(); screen = Screen.Home; homeTab = HomeTab.Settings }
-            is Screen.Edit -> screen = Screen.Home
+            is Screen.Edit -> screen = (screen as Screen.Edit).returnToSessionId?.let(Screen::Terminal) ?: Screen.Home
             is Screen.Terminal -> screen = Screen.Home
             // 从终端进来的回终端，从连接列表进来的回列表；离开即断开那条 SFTP 连接。
             is Screen.Files -> {
@@ -192,11 +192,15 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
         is Screen.Edit -> HostEditScreen(
             initial = s.host,
             allHosts = hosts,
-            onSave = {
-                vm.save(it)
-                screen = Screen.Home
+            onSave = { host ->
+                if (s.returnToSessionId == null) {
+                    vm.save(host)
+                    screen = Screen.Home
+                } else {
+                    vm.saveProjectPath(host) { screen = Screen.Terminal(s.returnToSessionId) }
+                }
             },
-            onCancel = { screen = Screen.Home },
+            onCancel = { screen = s.returnToSessionId?.let(Screen::Terminal) ?: Screen.Home },
             savedFingerprint = s.host?.let { vm.savedFingerprint(it) },
             onClearFingerprint = { h, p -> vm.clearFingerprint(Host(host = h, port = p)) },
         )
@@ -270,6 +274,12 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
                         gitDiffResult = gitDiffResult,
                         gitDiffLoading = gitDiffLoading,
                         onOpenGitDiff = { vm.loadGitDiff(ts) },
+                        // 只改目录，不关闭正在运行的会话；回到原终端后可立即重试。
+                        onConfigureGitProject = {
+                            val latest = hosts.firstOrNull { it.id == ts.host.id } ?: ts.host
+                            vm.dismissGitDiff()
+                            screen = Screen.Edit(latest, returnToSessionId = ts.id)
+                        },
                         onDismissGitDiff = { vm.dismissGitDiff() },
                         onOpenFiles = { openFiles(ts.host, ts.id) },
                     )

@@ -69,10 +69,93 @@ class GitDiffTest {
     }
 
     @Test
-    fun `generates safe shell command quoting project path`() {
+    fun `passes quoted project path as separate shell argument`() {
         val cmd = GitDiff.diffCommand("/srv/my project/with'quote")
-        assertTrue(cmd.contains("cd '/srv/my project/with'\\''quote'"))
+        assertTrue(cmd.contains("cd \"\$1\""))
+        assertTrue(cmd.contains("' sh '/srv/my project/with'\\''quote'"))
         assertTrue(cmd.contains("git -c core.quotepath=false diff"))
         assertTrue(cmd.contains("head -c ${GitDiff.MAX_DIFF_BYTES}"))
+        assertTrue(GitDiff.diffCommand("/srv/repo ").endsWith("' sh '/srv/repo '"))
     }
+
+    // ---------- 目录解析链 ----------
+
+    private fun resolve(
+        osc7: String? = null,
+        project: String = "",
+        name: String? = null,
+        named: String? = null,
+        sessions: String? = null,
+    ) = GitDiff.resolveTargetDir(osc7, project, name, named, sessions)
+
+    @Test
+    fun `osc7 cwd wins over configured project path`() {
+        assertEquals(
+            GitDiff.DirResolution.Dir("/work/actual"),
+            resolve(osc7 = "/work/actual", project = "/work/configured"),
+        )
+    }
+
+    @Test
+    fun `project path falls back when no osc7`() {
+        assertEquals(
+            GitDiff.DirResolution.Dir("/srv/app/"),
+            resolve(project = "/srv/app/", sessions = null),
+        )
+    }
+
+    @Test
+    fun `named tmux session cwd used when probe succeeds`() {
+        assertEquals(
+            GitDiff.DirResolution.Dir("/repo"),
+            resolve(name = "agent", named = "/repo\n", sessions = null),
+        )
+    }
+
+    @Test
+    fun `named probe failure does not silently select another session`() {
+        assertEquals(GitDiff.DirResolution.ProbeFailed, resolve(name = "agent", named = null, sessions = "other:/repo\n"))
+        assertEquals(GitDiff.DirResolution.Missing, resolve(name = "agent", named = "", sessions = "other:/repo\n"))
+    }
+
+    @Test
+    fun `single session heuristic resolves`() {
+        assertEquals(
+            GitDiff.DirResolution.Dir("/only/repo"),
+            resolve(sessions = "main:/only/repo\n"),
+        )
+    }
+
+    @Test
+    fun `multiple sessions never guess`() {
+        assertEquals(
+            GitDiff.DirResolution.Missing,
+            resolve(sessions = "a:/one\nb:/two\n"),
+        )
+    }
+
+    @Test
+    fun `sessions probe failure is distinct from missing directory`() {
+        assertEquals(GitDiff.DirResolution.ProbeFailed, resolve(sessions = null))
+        assertEquals(GitDiff.DirResolution.Missing, resolve(sessions = ""))
+        assertEquals(GitDiff.DirResolution.ProbeFailed, resolve(sessions = "__MOKE_TMUX__:failed\n"))
+    }
+
+    @Test
+    fun `invalid reported paths cannot become remote command arguments`() {
+        assertEquals(GitDiff.DirResolution.Dir("/configured"), resolve(osc7 = "/tmp\nnext", project = "/configured"))
+        assertEquals(GitDiff.DirResolution.Missing, resolve(name = "agent", named = "warning\n/repo", sessions = ""))
+    }
+
+    @Test
+    fun `preserves trailing spaces in current directory`() {
+        assertEquals(GitDiff.DirResolution.Dir("/srv/repo "), resolve(osc7 = "/srv/repo ", project = "/other"))
+        assertEquals(GitDiff.DirResolution.Dir("/srv/repo "), resolve(name = "work", named = "/srv/repo \n"))
+    }
+
+    @Test
+    fun `rejects named pane output with additional absolute line`() {
+        assertEquals(GitDiff.DirResolution.Missing, resolve(name = "work", named = "/wrong\n/right\n"))
+    }
+
 }
