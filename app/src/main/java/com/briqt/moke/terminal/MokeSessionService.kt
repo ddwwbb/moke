@@ -5,8 +5,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.briqt.moke.MainActivity
 import com.briqt.moke.MokeApplication
@@ -24,17 +26,29 @@ import kotlinx.coroutines.flow.onEach
  * 从而会话保持存活。会话对象本身由 [MokeApplication.sessions]（Application 作用域）持有，本服务负责：
  *  - 常驻通知（展示活动会话数）；
  *  - 观察会话列表，归零即自行停止。
+ *  - 持有 PARTIAL WakeLock + WifiLock：前台服务只保证进程不被杀，挡不住 CPU 休眠 / Wi-Fi 供电收敛——
+ *    真机上退后台数十秒后内核挂起 SSH socket（ECONNABORTED「Software caused connection abort」）。
+ *    Termux 同样持有 WakeLock 维持终端会话。
  */
 class MokeSessionService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var started = false
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
+        // CPU 与 Wi-Fi 在息屏后继续可用——SSH 心跳/读线程依赖于此，见类注释。
+        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "moke:sessions")
+            .apply { setReferenceCounted(false); acquire() }
+        wifiLock = (getSystemService(WIFI_SERVICE) as WifiManager)
+            .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "moke:sessions-wifi")
+            .apply { setReferenceCounted(false); acquire() }
         val sessions = (application as MokeApplication).sessions
         // 会话数变化即刷新通知；归零即停服。
         sessions.sessions.onEach { list ->
@@ -60,6 +74,10 @@ class MokeSessionService : Service() {
     }
 
     override fun onDestroy() {
+        runCatching { wakeLock?.release() }
+        runCatching { wifiLock?.release() }
+        wakeLock = null
+        wifiLock = null
         scope.cancel()
         super.onDestroy()
     }
