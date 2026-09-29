@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 一次会覆盖远端文件的上传：[names] 是已存在的同名文件，确认后才真正入队。 */
-data class UploadConflict(val uris: List<android.net.Uri>, val names: List<String>)
+data class UploadConflict(val uris: List<android.net.Uri>, val names: List<String>, val hostId: String, val dir: String, val sessionId: String?)
 
 /** 文件页的一屏状态。[terminalPath] 非空表示"终端当前目录"可用（用于 ⋮ 里的回跳）。 */
 data class FilesUiState(
@@ -46,14 +46,8 @@ class FilesController(context: Context, private val scope: CoroutineScope) {
     private var session: SftpSession? = null
     private var job: Job? = null
 
-    /**
-     * 打开某台主机的文件页。[from] 非空时尝试取"终端当前目录"作为起点。
-     *
-     * 取当前目录只在 tmux 会话上做得到（`#{pane_current_path}`）：普通登录壳的 cwd 属于那个
-     * shell 进程，侧通道另开的 exec 看不到，硬猜只会给出错误的路径。取不到就落到家目录，
-     * 不假装知道。
-     */
-    fun open(host: Host, jumpHost: Host?, from: TermSession?) {
+    /** 终端来源优先 tmux pane 目录；主机入口可使用用户显式保存的项目路径。 */
+    fun open(host: Host, jumpHost: Host?, from: TermSession?, projectPath: String? = null) {
         close()
         _state.value = FilesUiState(host = host, loading = true)
         job = scope.launch {
@@ -62,7 +56,11 @@ class FilesController(context: Context, private val scope: CoroutineScope) {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val terminalPath = from?.let { probeTerminalPath(it, s) } ?: ""
-                    val start = terminalPath.ifBlank { s.homePath() }
+                    val start = when {
+                        terminalPath.isNotBlank() -> terminalPath
+                        projectPath != null -> s.canonicalize(projectPath)
+                        else -> s.homePath()
+                    }
                     Triple(start, s.list(start), terminalPath)
                 }
             }.onSuccess { (start, entries, terminalPath) ->

@@ -33,9 +33,6 @@ import com.briqt.moke.terminal.FontInstallState
 import com.briqt.moke.terminal.FontRepository
 import com.briqt.moke.terminal.FontSpec
 import com.briqt.moke.terminal.TerminalThemes
-import com.briqt.moke.update.UpdateChecker
-import com.briqt.moke.update.UpdateInfo
-import com.briqt.moke.update.UpdateStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -53,6 +50,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+import com.briqt.moke.data.HostMigration
+import com.briqt.moke.terminal.GitDiff
+import com.briqt.moke.terminal.GitDiffResult
 
 class MokeViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -119,7 +119,7 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
             .stateIn(viewModelScope, SharingStarted.Eagerly, TerminalThemes.DEFAULT_ID)
 
     val primaryFontId: StateFlow<String> = settings.primaryFontId
-        .stateIn(viewModelScope, SharingStarted.Eagerly, FontCatalog.DEFAULT_ID)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_PRIMARY_FONT_ID)
 
     val fallbackFontId: StateFlow<String> = settings.fallbackFontId
         .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_FALLBACK_FONT_ID)
@@ -165,45 +165,6 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     val hostKeyRequest: StateFlow<HostKeyPrompt.Request?> = HostKeyPrompt.pending
 
     fun resolveHostKey(id: String, trusted: Boolean) = HostKeyPrompt.resolve(id, trusted)
-    /** 检查更新是否包含预发布版（关于页开关）。 */
-    val includePrerelease: StateFlow<Boolean> = settings.includePrerelease
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    fun setIncludePrerelease(enabled: Boolean) = viewModelScope.launch {
-        settings.setIncludePrerelease(enabled)
-        checkUpdateSilently()   // 节流已被清零，这里立刻按新口径重查一次
-    }
-
-    /**
-     * 静默检查更新的结果：非空 = 远端有更新（值为 tag，如 v0.1.16），UI 据此点一个主题色小圆点。
-     * 跨启动保留（存在 DataStore），所以离线打开也还看得见上次发现的新版。
-     */
-    val updateInfo: StateFlow<UpdateInfo?> = combine(settings.latestSeenTag, settings.latestSeenUrl) { tag, url ->
-        tag.takeIf { it.isNotBlank() && UpdateChecker.isNewer(it.removePrefix("v"), appVersion) }
-            ?.let { UpdateInfo(it, url) }
-    }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
-
-    /** 本机版本号（versionName）。 */
-    private val appVersion: String =
-        runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0" }.getOrDefault("0")
-
-    /**
-     * 启动时静默查一次更新：不打扰、失败静默丢弃；6 小时内不重复查（避免每次冷启都打网络）。
-     * 查到的 tag 落库，UI 只以小圆点提示。
-     */
-    private fun checkUpdateSilently() = viewModelScope.launch(Dispatchers.IO) {
-        val last = settings.lastUpdateCheckAt.first()
-        val now = System.currentTimeMillis()
-        if (now - last < 6 * 60 * 60 * 1000L) return@launch
-        val includeRc = settings.includePrerelease.first()
-        when (val r = UpdateChecker.check(appVersion, getApplication(), includeRc)) {
-            is UpdateStatus.Available -> settings.recordUpdateCheck(now, r.latest, r.url)
-            is UpdateStatus.UpToDate -> settings.recordUpdateCheck(now, "")
-            else -> Unit   // 失败/超时：不记时间戳，下次启动再试；绝不打扰用户
-        }
-    }
-
     /** 修复 rc.1 可能把运行态 `tmux attach-session -t '$N'` 污染进保存连接的问题。 */
     private fun repairLegacyTmuxLoginCommands() = viewModelScope.launch(Dispatchers.IO) {
         val current = store.hosts.first()
@@ -277,6 +238,131 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     private val _importSuccess = MutableStateFlow<String?>(null)
     val importSuccess: StateFlow<String?> = _importSuccess.asStateFlow()
     fun clearImportSuccess() { _importSuccess.value = null }
+
+    private val _migrationPreview = MutableStateFlow<HostMigration.Preview?>(null)
+    val migrationPreview: StateFlow<HostMigration.Preview?> = _migrationPreview.asStateFlow()
+    private val _migrationError = MutableStateFlow<String?>(null)
+    val migrationError: StateFlow<String?> = _migrationError.asStateFlow()
+    private val _migrationBusy = MutableStateFlow(false)
+    val migrationBusy: StateFlow<Boolean> = _migrationBusy.asStateFlow()
+    private val migrationMutex = kotlinx.coroutines.sync.Mutex()
+
+    fun clearHostMigration() {
+        if (_migrationBusy.value) return
+        _migrationPreview.value = null
+        _migrationError.value = null
+    }
+
+    fun importHostFile(uri: android.net.Uri) = viewModelScope.launch(Dispatchers.IO) {
+        if (!migrationMutex.tryLock()) return@launch
+        _migrationBusy.value = true
+        _migrationPreview.value = null
+        _migrationError.value = null
+        try {
+            val input = getApplication<Application>().contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException(uri.toString())
+            val text = input.use { stream ->
+                val buffer = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(8192)
+                while (true) {
+                    val read = stream.read(chunk)
+                    if (read < 0) break
+                    require(buffer.size() + read <= MAX_HOST_MIGRATION_BYTES) { str(R.string.migration_file_too_large) }
+                    buffer.write(chunk, 0, read)
+                }
+                buffer.toString(Charsets.UTF_8.name())
+            }
+            check(!store.unreadable.first()) { str(R.string.hosts_unreadable_title) }
+            _migrationPreview.value = HostMigration.preview(text, store.hosts.first())
+        } catch (t: Exception) {
+            _migrationError.value = str(R.string.migration_read_failed, t.message ?: t.javaClass.simpleName)
+        } finally {
+            _migrationBusy.value = false
+            migrationMutex.unlock()
+        }
+    }
+
+    fun exportHostFile(uri: android.net.Uri) = viewModelScope.launch(Dispatchers.IO) {
+        if (!migrationMutex.tryLock()) return@launch
+        _migrationBusy.value = true
+        _migrationError.value = null
+        try {
+            check(!store.unreadable.first()) { str(R.string.hosts_unreadable_title) }
+            val body = HostMigration.export(store.hosts.first())
+            val stream = getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                ?: throw IllegalStateException(uri.toString())
+            stream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+        } catch (t: Exception) {
+            _migrationError.value = str(R.string.migration_write_failed, t.message ?: t.javaClass.simpleName)
+        } finally {
+            _migrationBusy.value = false
+            migrationMutex.unlock()
+        }
+    }
+
+    fun applyHostMigration(decisions: Map<Int, HostMigration.Decision>) = viewModelScope.launch(Dispatchers.IO) {
+        if (!migrationMutex.tryLock()) return@launch
+        val preview = _migrationPreview.value
+        if (preview == null) { migrationMutex.unlock(); return@launch }
+        _migrationBusy.value = true
+        try {
+            if (!HostMigration.save(preview, decisions, store)) {
+                _migrationError.value = str(R.string.migration_save_failed)
+                return@launch
+            }
+            _migrationPreview.value = null
+            _migrationError.value = str(R.string.migration_saved)
+        } catch (t: Exception) {
+            _migrationError.value = t.message ?: t.javaClass.simpleName
+        } finally {
+            _migrationBusy.value = false
+            migrationMutex.unlock()
+        }
+    }
+
+    /** Git Diff 变更状态（非空则在界面弹出 BottomSheet 审阅）。 */
+    private val _gitDiffResult = MutableStateFlow<GitDiffResult?>(null)
+    val gitDiffResult: StateFlow<GitDiffResult?> = _gitDiffResult.asStateFlow()
+
+    private val _gitDiffLoading = MutableStateFlow(false)
+    val gitDiffLoading: StateFlow<Boolean> = _gitDiffLoading.asStateFlow()
+
+    fun dismissGitDiff() {
+        _gitDiffResult.value = null
+        _gitDiffLoading.value = false
+    }
+
+    fun loadGitDiff(ts: TermSession) = viewModelScope.launch(Dispatchers.IO) {
+        if (_gitDiffLoading.value) return@launch
+        _gitDiffLoading.value = true
+        _gitDiffResult.value = null
+
+        var targetDir = ts.host.projectPath.trim().trimEnd('/')
+        if (targetDir.isBlank()) {
+            val name = ts.remoteTmuxName.value
+            if (!name.isNullOrBlank()) {
+                val out = runCatching { ts.transport.exec(Tmux.paneCwdCmd(name)) }.getOrNull()?.trim().orEmpty()
+                if (out.startsWith("/")) targetDir = out
+            }
+        }
+
+        if (targetDir.isBlank()) {
+            _gitDiffLoading.value = false
+            _gitDiffResult.value = GitDiffResult.Error(str(R.string.git_diff_no_project_path))
+            return@launch
+        }
+
+        val out = runCatching {
+            ts.transport.exec(GitDiff.diffCommand(targetDir))
+        }.getOrNull()
+
+        _gitDiffLoading.value = false
+        if (out == null) {
+            _gitDiffResult.value = GitDiffResult.Error(str(R.string.tmux_control_unavailable))
+        } else {
+            _gitDiffResult.value = GitDiff.parse(out)
+        }
+    }
 
     fun save(host: Host) = viewModelScope.launch { store.upsert(host, hosts.value) }
 
@@ -569,6 +655,23 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
         return ts.id
     }
 
+    /** 用户从主机卡片明确选择项目，始终新建干净终端；不更改默认连接/上次 tmux 选择。 */
+    fun openProject(host: Host): String {
+        val path = host.projectPath.takeIf { it.startsWith('/') } ?: return openSession(host)
+        val name = Tmux.projectSessionName(host)
+        val ts = sessions.open(
+            host = host,
+            jumpHost = resolveJump(host),
+            initialTitle = "tmux · $name",
+            remoteTmuxName = name,
+            startupCommand = Tmux.attachOrCreateInPathCommand(name, path),
+        )
+        touchHost(host)
+        ensureSessionService()
+        confirmTmuxAttach(ts, name)
+        return ts.id
+    }
+
     /** 连接就绪后探测一次；确实装了 tmux 才弹选择器（未安装/失败都不打扰）。 */
     private fun requestTmuxPickerWhenReady(ts: TermSession) = viewModelScope.launch {
         refreshTmux(ts).join()
@@ -630,12 +733,19 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     val transfers = (app as MokeApplication).transfers.also { mgr ->
         // 记住的下载目录失效（被删/撤授权）时忘掉它，之后回到默认落点。
         mgr.onTreeUnusable = { viewModelScope.launch { settings.setDownloadTreeUri("") } }
-        // 上传成功后刷新正在看的那个目录：列表是一次性拉取的快照，不刷新就看不到刚传上去的文件，
-        // 只能理解成"传失败了"。只在同主机同目录时刷新，避免把用户已经翻走的位置拽回来。
-        mgr.onUploadDone = { hostId, dir ->
+        // DONE 回调在 IO 线程；先记录在 Application 会话中，UI 销毁也不丢路径。
+        mgr.onUploadDone = { taskId, hostId, remotePath ->
+            val session = sessions.sessions.value.firstOrNull { it.host.id == hostId && it.pendingDraftUploads.remove(taskId) }
+            if (session?.alive?.value == true) {
+                val quoted = com.briqt.moke.terminal.sftp.RemotePath.shellQuote(remotePath)
+                session.composerDraft.update { draft -> if (draft.isBlank()) quoted else "$draft $quoted" }
+                session.draftNeedsReview.value = true
+            }
             viewModelScope.launch {
                 val st = filesState.value
-                if (st.host?.id == hostId && st.path == dir) filesController.refresh()
+                if (st.host?.id == hostId && st.path == com.briqt.moke.terminal.sftp.RemotePath.parent(remotePath)) {
+                    filesController.refresh()
+                }
             }
         }
     }
@@ -650,12 +760,20 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     val filesSort: StateFlow<FilesSort> = settings.filesSort
         .stateIn(viewModelScope, SharingStarted.Eagerly, FilesSort.NAME)
 
-    /** 打开文件页；[from] 非空（从终端 ⋮ 进）时尝试以终端当前目录为起点。 */
+    /** 从主机卡片进入时使用用户保存的目录；终端来源仍以 tmux pane 当前目录优先。 */
     fun openFiles(host: Host, from: TermSession? = null) {
-        filesController.open(host, resolveJump(host), from)
+        filesController.open(host, resolveJump(host), from, host.projectPath.takeIf { from == null && it.isNotBlank() })
     }
 
-    fun closeFiles() = filesController.close()
+    private var filesFromSessionId: String? = null
+
+    fun setFilesFromSession(sessionId: String?) { filesFromSessionId = sessionId }
+
+    fun closeFiles() {
+        filesFromSessionId = null
+        _uploadConflict.value = null
+        filesController.close()
+    }
     fun filesNavigate(path: String) = filesController.navigate(path)
     fun filesUp() = filesController.up()
     fun filesRefresh() = filesController.refresh()
@@ -672,26 +790,34 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     private val _uploadConflict = MutableStateFlow<UploadConflict?>(null)
     val uploadConflict: StateFlow<UploadConflict?> = _uploadConflict.asStateFlow()
 
-    /** 选好文件后先查远端是否已有同名：有就先问，没有就直接传。 */
+    /** 同名覆盖确认绑定主机、目录和来源会话；期间切走目录不能把文件传到错误位置。 */
     fun uploadHere(uris: List<android.net.Uri>) = viewModelScope.launch {
-        if (filesState.value.host == null || filesState.value.path.isBlank()) return@launch
+        val state = filesState.value
+        val host = state.host ?: return@launch
+        val dir = state.path.takeIf { it.isNotBlank() } ?: return@launch
+        val source = filesFromSessionId
         val names = uris.map { displayNameOfUri(it) }
         val clash = filesController.existingNames(names)
-        if (clash.isEmpty()) startUpload(uris) else _uploadConflict.value = UploadConflict(uris, clash)
+        if (filesState.value.host?.id != host.id || filesState.value.path != dir) return@launch
+        if (clash.isEmpty()) startUpload(uris, host, dir, source)
+        else _uploadConflict.value = UploadConflict(uris, clash, host.id, dir, source)
     }
 
     fun confirmUploadOverwrite() {
         val pending = _uploadConflict.value ?: return
         _uploadConflict.value = null
-        startUpload(pending.uris)
+        val state = filesState.value
+        if (state.host?.id != pending.hostId || state.path != pending.dir) return
+        startUpload(pending.uris, state.host, state.path, pending.sessionId)
     }
 
     fun dismissUploadConflict() { _uploadConflict.value = null }
 
-    private fun startUpload(uris: List<android.net.Uri>) {
-        val host = filesState.value.host ?: return
-        val dir = filesState.value.path.ifBlank { return }
-        transfers.enqueueUpload(host, uris, dir)
+    private fun startUpload(uris: List<android.net.Uri>, host: Host, dir: String, source: String?) {
+        transfers.enqueueUpload(host, uris, dir, onQueued = { ids ->
+            source?.let { sessions.get(it) }?.takeIf { it.alive.value && it.host.id == host.id }
+                ?.pendingDraftUploads?.addAll(ids)
+        })
         ensureTransferService()
     }
 
@@ -728,10 +854,13 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelTransfer(id: String) = transfers.cancel(id)
-    fun removeTransfer(id: String) = transfers.remove(id)
+    fun removeTransfer(id: String) {
+        sessions.sessions.value.forEach { it.pendingDraftUploads.remove(id) }
+        transfers.remove(id)
+    }
     fun clearFinishedTransfers() = transfers.clearFinished()
 
-    /** 把远端路径写进终端输入行（已 shell 转义），省掉在手机上手打长路径。 */
+    /** 把用户选中的现有远端路径写入终端输入行（已 shell 转义）。 */
     fun sendToTerminal(sessionId: String, text: String) {
         sessions.get(sessionId)?.session?.write(text)
     }
@@ -832,14 +961,13 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
         settings.removeUserFont(id)              // 若是用户字体则移除记录（对内置无副作用）
         _downloadStates.update { it - id }
         // 若被删字体正被使用，回退到默认/无
-        if (primaryFontId.value == id) settings.setPrimaryFont(FontCatalog.DEFAULT_ID)
+        if (primaryFontId.value == id) settings.setPrimaryFont(SettingsStore.DEFAULT_PRIMARY_FONT_ID)
         if (fallbackFontId.value == id) settings.setFallbackFont("")
     }
 
     // 放在类末尾：init 里要用到上面声明的 settings / appVersion，Kotlin 按声明顺序初始化，提前放会 NPE。
     init {
         repairLegacyTmuxLoginCommands()
-        checkUpdateSilently()
     }
 
     private companion object {
@@ -848,5 +976,6 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
          * 没附上的会话长时间挂着错误标注。
          */
         const val ATTACH_CONFIRM_ROUNDS = 8
+        const val MAX_HOST_MIGRATION_BYTES = 8 * 1024 * 1024
     }
 }

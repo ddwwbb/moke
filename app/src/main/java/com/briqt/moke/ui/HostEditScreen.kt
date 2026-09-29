@@ -87,6 +87,7 @@ fun HostEditScreen(
     val forwardInvalid = PortForwards.parsePorts(forwardPorts).invalid
     var group by remember { mutableStateOf(base.group) }
     var persistence by remember { mutableStateOf(base.persistence) }
+    var projectPath by remember { mutableStateOf(base.projectPath) }
     var fingerprintCleared by remember { mutableStateOf(false) }
     var confirmClearFingerprint by remember { mutableStateOf(false) }
 
@@ -300,6 +301,15 @@ fun HostEditScreen(
                 }
             }
 
+            OutlinedTextField(
+                value = projectPath, onValueChange = { projectPath = it },
+                label = { Text(stringResource(R.string.host_project_path)) },
+                supportingText = { Text(stringResource(R.string.host_project_path_hint)) },
+                isError = projectPath.isNotBlank() && !projectPath.trim().startsWith('/'),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             // 启动命令：协议级 exec（SSH command channel / mosh-server --），空=远端默认 login shell。
             // 与「登录后自动执行」是两回事：那条是 shell 起来之后往 PTY 里敲的一行。
             // 会话持久化=tmux 时这个位置归 tmux 附加命令，字段置灰并说明原因。
@@ -407,6 +417,7 @@ fun HostEditScreen(
                                 startupCommand = startupCommand.trim(),
                                 loginCommand = loginCommand.trim(),
                                 forwardPorts = PortForwards.parsePorts(forwardPorts).ports.joinToString(", "),
+                                projectPath = projectPath.trim().let { if (it == "/") it else it.trimEnd('/') },
                                 group = group.trim(),
                                 persistence = persistence,
                                 // 关掉持久化时一并忘记记住的会话名，避免下次重新开启后悄悄附加到旧会话。
@@ -418,7 +429,7 @@ fun HostEditScreen(
                             )
                         )
                     },
-                    enabled = host.isNotBlank() && username.isNotBlank() && forwardInvalid.isEmpty(),
+                    enabled = host.isNotBlank() && username.isNotBlank() && forwardInvalid.isEmpty() && (projectPath.isBlank() || projectPath.trim().startsWith('/')),
                     modifier = Modifier.weight(1f),
                 ) { Text(stringResource(R.string.action_save)) }
             }

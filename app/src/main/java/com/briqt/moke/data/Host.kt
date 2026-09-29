@@ -47,6 +47,8 @@ data class Host(
     val tmuxSessionName: String = "",
     /** 连接后自动转发的远端端口（用户原文，如 "5173, 8080"；解析见 `PortForwards.parsePorts`）。 */
     val forwardPorts: String = "",
+    /** 用户显式保存的远端项目目录（空=未配置，不触发项目工作区）。 */
+    val projectPath: String = "",
 ) {
     /**
      * 展示名：连接名优先，否则 `user@host`。
@@ -99,6 +101,7 @@ data class Host(
         put("persistence", persistence.name)
         put("tmuxSessionName", tmuxSessionName)
         put("forwardPorts", forwardPorts)
+        put("projectPath", projectPath)
     }
 
     companion object {
@@ -124,6 +127,7 @@ data class Host(
             }.getOrDefault(SessionPersistence.NONE),
             tmuxSessionName = o.optString("tmuxSessionName", ""),
             forwardPorts = o.optString("forwardPorts", ""),
+            projectPath = o.optString("projectPath", ""),
         )
     }
 }

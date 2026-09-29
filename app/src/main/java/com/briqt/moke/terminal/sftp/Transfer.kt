@@ -52,6 +52,13 @@ data class TransferTask(
     /** 0f~1f；总量未知时返回 null（UI 显示不确定进度）。 */
     val fraction: Float? get() = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null
 
+    /** 只有实际运行中的任务才能完成；取消优先于传输流末尾返回。 */
+    fun complete(cancelRequested: Boolean): TransferTask = when {
+        state != TransferState.RUNNING -> this
+        cancelRequested -> copy(state = TransferState.CANCELLED)
+        else -> copy(state = TransferState.DONE, done = if (total >= 0) total else done)
+    }
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("hostId", hostId)

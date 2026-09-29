@@ -39,4 +39,28 @@ class HostStartupCommandTest {
         val json = Host(host = "example.com", username = "u").toJson().apply { remove("startupCommand") }
         assertEquals("", Host.fromJson(json).startupCommand)
     }
+
+    @Test
+    fun `explicit project path survives JSON roundtrip without changing legacy host fields`() {
+        val host = Host(
+            projectPath = "/srv/team work", group = "development",
+            startupCommand = "zsh -l", loginCommand = "echo hello", tmuxSessionName = "daily",
+        )
+        val restored = Host.fromJson(host.toJson())
+        assertEquals("/srv/team work", restored.projectPath)
+        assertEquals("development", restored.group)
+        assertEquals("zsh -l", restored.startupCommand)
+        assertEquals("echo hello", restored.loginCommand)
+        assertEquals("daily", restored.tmuxSessionName)
+    }
+
+    @Test
+    fun `older host records have no implicit project directory`() {
+        val oldRecord = Host(projectPath = "/srv/old", group = "ops").toJson().apply {
+            remove("projectPath")
+        }
+        val restored = Host.fromJson(oldRecord)
+        assertEquals("", restored.projectPath)
+        assertEquals("ops", restored.group)
+    }
 }

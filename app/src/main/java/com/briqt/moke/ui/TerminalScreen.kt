@@ -11,6 +11,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.briqt.moke.terminal.TerminalLinks
 import com.briqt.moke.terminal.PortForwards
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Code
+import com.briqt.moke.terminal.GitDiffResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -134,6 +136,10 @@ fun TerminalScreen(
     onTmuxAttach: (TmuxSession) -> Unit,
     onTmuxTakeOver: (TmuxSession) -> Unit,
     onOpenFiles: () -> Unit,
+    gitDiffResult: GitDiffResult? = null,
+    gitDiffLoading: Boolean = false,
+    onOpenGitDiff: () -> Unit = {},
+    onDismissGitDiff: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -187,10 +193,17 @@ fun TerminalScreen(
     var panelOpen by remember(ts.id) { mutableStateOf(false) }
 
     var showComposer by remember(ts.id) { mutableStateOf(false) }
-    // 顶栏 ⋮ 里的「修改标题」弹窗开关。
+    LaunchedEffect(ts.id) {
+        ts.draftNeedsReview.collect { pending ->
+            if (pending) {
+                showComposer = true
+                ts.draftNeedsReview.value = false
+            }
+        }
+    }
+    // 草稿存于会话，文件上传完成后即使终端页不在组合中也能安全地追加。
+    val composerText by ts.composerDraft.collectAsState()
     var showTitleDialog by remember(ts.id) { mutableStateOf(false) }
-    // 文本段草稿：提升到此，关闭 sheet 保留、发送后清空。
-    var composerText by remember(ts.id) { mutableStateOf("") }
     // 捏合缩放提示（持有当前 sp，非空即显示；2 秒后自动消失）。
     var zoomHintSp by remember(ts.id) { mutableStateOf<Float?>(null) }
     // 「无处可滚」提示：滑动落到既没有历史、也判不出方向键是否安全的状态时说明原因。
@@ -355,6 +368,7 @@ fun TerminalScreen(
                 onToggleExtraKeys = onToggleExtraKeys,
                 onSetTitle = { showTitleDialog = true },
                 onOpenFiles = { keyboard?.hide(); onOpenFiles() },
+                onOpenGitDiff = { keyboard?.hide(); onOpenGitDiff() },
                 onShowKeyboard = { controller.showKeyboard() },
                 // 离开终端页前先收起软键盘（否则返回列表页键盘残留）。
                 onClose = { keyboard?.hide(); if (confirmClose) showCloseConfirm = true else onClose() },
@@ -501,16 +515,15 @@ fun TerminalScreen(
             when {
                 showComposer -> TextBlockComposer(
                     value = composerText,
-                    onValueChange = { composerText = it },
+                    onValueChange = { ts.composerDraft.value = it },
                     onDismiss = { showComposer = false; controller.showKeyboard() },
                     onSend = { text, appendEnter ->
-                        composerText = ""      // 发送后清空草稿
+                        if (ts.composerDraft.value == text) ts.composerDraft.value = ""
                         showComposer = false
                         controller.showKeyboard()
                         scope.launch {
                             if (text.isNotEmpty()) ts.session.write(text)
-                            // 正文与回车分两次写、中间隔一个极小延时，让 CR 作为独立按键(单独一次 read)到达；
-                            // 否则「正文+尾部 CR」会被 raw 模式 TUI(如 claude / vim 插入态)判为粘贴，只插入换行而不提交。
+                            // CR 独立于正文发给 raw 模式 TUI，避免被识别成粘贴中的换行。
                             if (appendEnter) {
                                 if (text.isNotEmpty()) delay(40)
                                 ts.session.write("\r")
@@ -595,6 +608,12 @@ fun TerminalScreen(
             onNew = { onTmuxNew(it) },
         )
     }
+
+    GitDiffSheet(
+        result = gitDiffResult,
+        loading = gitDiffLoading,
+        onDismiss = onDismissGitDiff,
+    )
 }
 
 /**
@@ -695,6 +714,7 @@ private fun TerminalTopBar(
     onToggleExtraKeys: () -> Unit,
     onSetTitle: () -> Unit,
     onOpenFiles: () -> Unit,
+    onOpenGitDiff: () -> Unit = {},
     onShowKeyboard: () -> Unit,
     onClose: () -> Unit,
     onBack: () -> Unit,
@@ -822,6 +842,12 @@ private fun TerminalTopBar(
                         text = { Text(stringResource(R.string.menu_port_forward), style = MaterialTheme.typography.bodyMedium) },
                         leadingIcon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         onClick = { menuOpen = false; onOpenForwards() },
+                    )
+                    // Git 改动：查看远端当前项目的只读代码差异
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.git_diff_title), style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(Icons.Filled.Code, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { menuOpen = false; onOpenGitDiff() },
                     )
                     HorizontalDivider()
                     // 字号步进（点 ± 不关闭菜单，便于连续调整）。

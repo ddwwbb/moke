@@ -1,5 +1,8 @@
 package com.briqt.moke.terminal
 
+import com.briqt.moke.data.Host
+import java.security.MessageDigest
+
 /**
  * 远端一个 tmux 会话（侧通道 list-sessions 解析所得）。
  * [id]（#{session_id} 如 $0）是当前 tmux server 生命周期内的精确句柄；[name] 是跨连接恢复身份。
@@ -207,6 +210,60 @@ object Tmux {
             "ec=\$?; [ \$ec -eq 0 ] && exit 0; " +
             "echo \"moke: tmux exited (\$ec)\"; exec \${SHELL:-sh} -l' sh ${q(name)}"
     }
+
+    /** 去掉不改变目录身份的尾随斜线；空配置仍保持空，绝不意外打开根目录。 */
+    private fun workspacePath(path: String): String =
+        if (path.startsWith('/')) path.trimEnd('/').ifEmpty { "/" } else path
+
+    /**
+     * 从显式保存的远端路径导出稳定会话名；同 basename 的不同路径用路径摘要消歧。
+     * 名称只用于查找，实际目录仍由 [attachOrCreateInPathCommand] 的路径校验保护。
+     */
+    fun projectSessionName(host: Host): String {
+        val path = workspacePath(host.projectPath)
+        require(path.startsWith('/')) { "Project path must be absolute" }
+        val basename = defaultSessionName(path.trimEnd('/').substringAfterLast('/')).take(24)
+        val hash = MessageDigest.getInstance("SHA-256").digest(path.toByteArray(Charsets.UTF_8))
+        val hex = "0123456789abcdef"
+        val suffix = buildString(16) {
+            for (i in 0 until 8) {
+                append(hex[(hash[i].toInt() ushr 4) and 15])
+                append(hex[hash[i].toInt() and 15])
+            }
+        }
+        return "moke-$basename-$suffix"
+    }
+
+    /**
+     * 仅为用户保存的绝对目录新建/附加项目工作区；不会修改普通会话的恢复规则。
+     * 已有同名会话必须带相同的 @moke_project_path，否则明确报错并回到登录壳，
+     * 不使用 `new-session -A`：它会在检查与附加间静默劫持同名的其它工作区。
+     * 目录和名称经 sh 的独立 argv 传递，不执行目录文本；复用现有会话也不改变其 cwd。
+     */
+    fun attachOrCreateInPathCommand(name: String, path: String): String =
+        "sh -c '" +
+            "for t in ${TERM_CANDIDATES.joinToString(" ")}; do " +
+            "if command -v tput >/dev/null 2>&1; then " +
+            "TERM=\"\$t\" tput clear >/dev/null 2>&1 && { TERM=\$t; export TERM; break; }; " +
+            "elif infocmp \"\$t\" >/dev/null 2>&1; then TERM=\$t; export TERM; break; fi; done; " +
+            "case \"\$2\" in /*) ;; *) echo \"moke: project path must be absolute\"; exec \${SHELL:-sh} -l;; esac; " +
+            "[ -d \"\$2\" ] || { echo \"moke: project directory not found: \$2\"; exec \${SHELL:-sh} -l; }; " +
+            "command -v tmux >/dev/null 2>&1 || " +
+            "{ echo \"moke: tmux not found on this host\"; exec \${SHELL:-sh} -l; }; " +
+            "if tmux has-session -t \"=\$1\" 2>/dev/null; then " +
+            "session=\$(tmux display-message -p -t \"=\$1\" \"#{session_id}\"); " +
+            "saved=\$(tmux show-options -qv -t \"\$session\" @moke_project_path); " +
+            "[ -n \"\$session\" ] && [ \"\$saved\" = \"\$2\" ] || " +
+            "{ echo \"moke: project session name conflicts with another directory\"; exec \${SHELL:-sh} -l; }; " +
+            "else " +
+            "session=\$(tmux -u new-session -d -P -F \"#{session_id}\" -s \"\$1\" -c \"\$2\") || " +
+            "{ echo \"moke: project session could not be created\"; exec \${SHELL:-sh} -l; }; " +
+            "tmux set-option -t \"\$session\" @moke_project_path \"\$2\" || " +
+            "{ echo \"moke: project session could not be tagged\"; exec \${SHELL:-sh} -l; }; " +
+            "fi; " +
+            "tmux -u attach-session -t \"\$session\"; " +
+            "ec=\$?; [ \$ec -eq 0 ] && exit 0; " +
+            "echo \"moke: tmux exited (\$ec)\"; exec \${SHELL:-sh} -l' sh ${q(name)} ${q(workspacePath(path))}"
 
     /**
      * 取会话当前活动 pane 的工作目录（文件页的起始路径）。

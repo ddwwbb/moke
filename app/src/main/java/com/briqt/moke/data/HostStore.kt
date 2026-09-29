@@ -98,6 +98,18 @@ class HostStore(private val context: Context) {
         return written
     }
 
+    /** 迁移预览与提交必须基于同一份加密列表；期间有编辑则拒绝写入，不合并旧快照。 */
+    suspend fun saveIfUnchanged(expected: List<Host>, next: List<Host>): Boolean {
+        var written = false
+        context.dataStore.edit { prefs ->
+            val current = decode(prefs[key])
+            if (current.unreadable || parse(current.json) != expected) return@edit
+            prefs[key] = encode(next) ?: return@edit
+            written = true
+        }
+        return written
+    }
+
     suspend fun delete(host: Host, current: List<Host>): Boolean =
         save(current.filterNot { it.id == host.id })
 

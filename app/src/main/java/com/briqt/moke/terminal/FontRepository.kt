@@ -212,15 +212,12 @@ class FontRepository(private val context: Context) {
         }
     }
 
-    /** 内置字体 id → res/font 资源。 */
+    /** 内置字体 id → res/font 资源。jetbrains_mono / noto_sans_sc 放在 standard 源集
+     *（maple 变体不打包，避免与 Maple 重复内置 CJK/主字体），故统一走运行时 getIdentifier；
+     * maple_mono 本就只在 maple 变体存在。找不到（变体未打包该字体）返回 null。 */
     private fun bundledResId(id: String): Int? = when (id) {
-        "jetbrains_mono" -> R.font.jetbrains_mono
-        "noto_sans_sc" -> R.font.noto_sans_sc
-        // maple 发行变体内置 res/font/maple_mono.ttf；standard 变体无此资源，故用运行时
-        // getIdentifier（避免编译期引用不存在的 R.font.maple_mono），非 maple 变体返回 null。
-        "maple_mono" -> if (com.briqt.moke.BuildConfig.BUNDLE_MAPLE)
-            context.resources.getIdentifier("maple_mono", "font", context.packageName).takeIf { it != 0 }
-        else null
+        "jetbrains_mono", "noto_sans_sc", "maple_mono" ->
+            context.resources.getIdentifier(id, "font", context.packageName).takeIf { it != 0 }
         else -> null
     }
 

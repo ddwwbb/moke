@@ -60,12 +60,6 @@ class SettingsStore(private val context: Context) {
     // 首次连接一台新主机时，是否直接信任它的主机密钥（不弹确认）。
     private val autoTrustNewHostKeyKey = booleanPreferencesKey("auto_trust_new_host_key")
     private val terminalAlertsKey = booleanPreferencesKey("terminal_alerts")
-    // 静默检查更新：上次检查时间戳 + 已知的最新版本 tag 与其发布页地址（用于跨启动保留"有更新"小圆点与跳转目标）。
-    private val lastUpdateCheckKey = androidx.datastore.preferences.core.longPreferencesKey("last_update_check_at")
-    private val latestSeenTagKey = stringPreferencesKey("latest_seen_tag")
-    private val latestSeenUrlKey = stringPreferencesKey("latest_seen_url")
-    // 检查更新时是否把预发布版（rc）算进来。
-    private val includePrereleaseKey = booleanPreferencesKey("include_prerelease")
     // 下载目录（SAF 目录树 URI，已持久化读写授权）；空=还没选过，首次下载时问一次。
     private val downloadTreeKey = stringPreferencesKey("download_tree_uri")
     // 文件页：是否显示隐藏文件 + 排序方式。
@@ -86,6 +80,9 @@ class SettingsStore(private val context: Context) {
         // maple 发行变体自带 Maple Mono NF CN 并作为默认中文回退；standard 用内置思源黑体子集。
         val DEFAULT_FALLBACK_FONT_ID: String =
             if (com.briqt.moke.BuildConfig.BUNDLE_MAPLE) "maple_mono" else "noto_sans_sc"
+        /** 主字体默认：maple 变体直接用 Maple（中英等宽统一字重）；standard 用 JetBrains Mono。 */
+        val DEFAULT_PRIMARY_FONT_ID: String =
+            if (com.briqt.moke.BuildConfig.BUNDLE_MAPLE) "maple_mono" else FontCatalog.DEFAULT_ID
 
         /** 把任意字号规整到 0.5 网格并夹到范围内（避免浮点漂移）。 */
         fun snapFontSize(v: Float): Float =
@@ -107,9 +104,9 @@ class SettingsStore(private val context: Context) {
         prefs[schemeFollowsThemeKey] ?: false
     }
 
-    /** 主字体 id（默认内置 JetBrains Mono）。 */
+    /** 主字体 id（maple 变体默认 Maple Mono 统一中西字重；standard 默认 JetBrains Mono）。 */
     val primaryFontId: Flow<String> = context.settingsDataStore.data.map { prefs ->
-        prefs[primaryFontKey] ?: FontCatalog.DEFAULT_ID
+        prefs[primaryFontKey] ?: DEFAULT_PRIMARY_FONT_ID
     }
 
     /** 回退字体 id（默认内置思源黑体子集，中文开箱好看；空串 = 走系统）。 */
@@ -182,26 +179,6 @@ class SettingsStore(private val context: Context) {
      */
     val autoTrustNewHostKey: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
         prefs[autoTrustNewHostKeyKey] ?: false
-    }
-
-    /** 上次静默检查更新的时间（毫秒；0=从未）。 */
-    val lastUpdateCheckAt: Flow<Long> = context.settingsDataStore.data.map { prefs ->
-        prefs[lastUpdateCheckKey] ?: 0L
-    }
-
-    /** 静默检查发现的最新版本 tag（空=无新版；跨启动保留，用于小圆点）。 */
-    val latestSeenTag: Flow<String> = context.settingsDataStore.data.map { prefs ->
-        prefs[latestSeenTagKey] ?: ""
-    }
-
-    /** 与 latestSeenTag 配对的发布页地址（rc 指向 rc 页，正式版指向正式版页；空=无记录）。 */
-    val latestSeenUrl: Flow<String> = context.settingsDataStore.data.map { prefs ->
-        prefs[latestSeenUrlKey] ?: ""
-    }
-
-    /** 是否把预发布版算进"有更新"（默认关：正式用户不该被 rc 打扰）。 */
-    val includePrerelease: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
-        prefs[includePrereleaseKey] ?: false
     }
 
     /** 下载目录（SAF 目录树 URI 字符串；空=未选）。 */
@@ -353,35 +330,13 @@ class SettingsStore(private val context: Context) {
         context.settingsDataStore.edit { it[terminalAlertsKey] = on }
     }
 
-    /** 记录一次静默检查的结果（[tag] 为空表示已是最新）。 */
-    /**
-     * 切换"包含预发布"时**一并清掉已记住的 tag 与检查节流**：否则关掉开关后，小圆点还会继续
-     * 替一个用户已经不想要的 rc 版本亮着，而 6 小时节流内又不会重查来纠正它。
-     */
-    suspend fun setIncludePrerelease(enabled: Boolean) {
-        context.settingsDataStore.edit {
-            it[includePrereleaseKey] = enabled
-            it[latestSeenTagKey] = ""
-            it[latestSeenUrlKey] = ""
-            it[lastUpdateCheckKey] = 0L
-        }
-    }
-
-    suspend fun recordUpdateCheck(at: Long, tag: String, url: String = "") {
-        context.settingsDataStore.edit {
-            it[lastUpdateCheckKey] = at
-            it[latestSeenTagKey] = tag
-            it[latestSeenUrlKey] = url
-        }
-    }
-
     /** 恢复外观默认：配色 / 主字体 / 回退字体 / 字号 / 行距 / 字间距 / 光标（单次事务）。 */
     suspend fun resetAppearanceDefaults() {
         context.settingsDataStore.edit { prefs ->
             prefs[colorSchemeKey] = TerminalThemes.DEFAULT_ID
             prefs[lightColorSchemeKey] = TerminalThemes.DEFAULT_LIGHT_ID
             prefs[schemeFollowsThemeKey] = false
-            prefs[primaryFontKey] = FontCatalog.DEFAULT_ID
+            prefs[primaryFontKey] = DEFAULT_PRIMARY_FONT_ID
             prefs[fallbackFontKey] = DEFAULT_FALLBACK_FONT_ID
             prefs[fontSizeKey] = DEFAULT_FONT_SIZE_SP
             prefs[lineSpacingKey] = DEFAULT_SPACING

@@ -6,7 +6,7 @@
 
 本项目**只接受 issue 形式的问题反馈，不接受 Pull Request**。收到的 PR 会被自动关闭。
 
-请通过 [issue](https://github.com/briqt/moke/issues) 提交 bug 或建议。真机相关的问题请附上：设备型号、Android / 系统版本、服务器环境（是否装 mosh、locale 等）。
+请通过 [issue](https://github.com/ddwwbb/moke/issues) 提交 bug 或建议。真机相关的问题请附上：设备型号、Android / 系统版本、服务器环境（是否装 mosh、locale 等）。
 
 ## 本地构建
 

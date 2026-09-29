@@ -79,6 +79,34 @@
     <string name="host_edit">编辑</string>
     <string name="host_duplicate">创建副本</string>
     <string name="host_copy_command">复制连接命令</string>
+    <string name="host_open_project">打开项目工作区</string>
+    <string name="host_project_path">项目目录（可选）</string>
+    <string name="host_project_path_hint">远端绝对目录；在主机菜单中从这里打开文件或 tmux 工作区。</string>
+    <string name="host_migration_open">导入 / 导出主机</string>
+    <string name="host_migration_sub">在设备间迁移非秘密主机配置</string>
+    <string name="migration_title">主机配置迁移</string>
+    <string name="migration_intro">导出主机配置，或从版本化文件导入。应用前逐条预览。</string>
+    <string name="migration_credentials_notice">不会导出密码、私钥或私钥口令。请在新设备重新填写凭据。</string>
+    <string name="migration_import">导入文件</string>
+    <string name="migration_export">导出配置</string>
+    <string name="migration_no_hosts">暂无可导出的主机</string>
+    <string name="migration_busy">正在处理主机文件…</string>
+    <string name="migration_preview_title">导入预览</string>
+    <string name="migration_preview_count">%1$d 台主机</string>
+    <string name="migration_empty_preview">文件中没有可导入的主机。</string>
+    <string name="migration_source">%1$s@%2$s:%3$d</string>
+    <string name="migration_conflict">本地已有：%1$s</string>
+    <string name="migration_no_conflict">没有匹配的本地主机</string>
+    <string name="migration_add">新增为独立主机</string>
+    <string name="migration_overwrite">覆盖配置（仅地址、端口和用户名均相同时保留凭据）</string>
+    <string name="migration_skip">跳过</string>
+    <string name="migration_confirm">应用所选变更</string>
+    <string name="migration_saved">已导入主机配置</string>
+    <string name="migration_save_failed">无法保存主机配置；原有数据未更改。</string>
+    <string name="migration_read_failed">无法读取所选文件：%1$s</string>
+    <string name="migration_file_too_large">主机配置文件超过 8 MB</string>
+    <string name="migration_write_failed">无法导出主机文件：%1$s</string>
+    <string name="migration_export_name">moke-hosts.json</string>
     <string name="host_copied">已复制：%1$s</string>
 
     <!-- 会话 -->
@@ -214,10 +242,6 @@
     <string name="about_title">关于</string>
     <string name="app_tagline">Android 原生 SSH / mosh 终端</string>
     <string name="label_version">版本</string>
-    <string name="check_update">检查更新</string>
-    <string name="up_to_date">已是最新</string>
-    <string name="new_version">新版 %1$s</string>
-    <string name="retry_with_msg">重试（%1$s）</string>
     <string name="licenses_header">开源与许可</string>
     <string name="licenses_body">本应用基于多个开源项目构建，完整许可清单见项目 THIRD_PARTY_NOTICES。</string>
 
@@ -229,11 +253,6 @@
     <string name="import_failed">导入失败</string>
     <string name="font_default_name">字体</string>
     <string name="unnamed">未命名</string>
-
-    <!-- 更新检查 -->
-    <string name="update_none">暂无公开发布</string>
-    <string name="update_parse_failed">无法解析版本</string>
-    <string name="update_timeout">超时</string>
 
     <!-- 后台会话通知 -->
     <string name="notif_channel_name">会话保持</string>
@@ -357,8 +376,6 @@
     <string name="menu_tmux_scroll_setup_sub">附加后为该会话开启鼠标模式并绑定滚轮：翻页器翻页、命令行滚历史。会在远端 tmux server 上加一条 root 键表绑定。</string>
     <string name="menu_keep_screen_on">终端内保持屏幕常亮</string>
     <string name="menu_keep_screen_on_sub">打开终端时不自动息屏，较耗电</string>
-    <string name="update_found">发现新版本 %1$s</string>
-
     <string name="host_persistence">会话持久化</string>
     <string name="persistence_none">无</string>
     <string name="persistence_tmux">tmux（连接即进入）</string>
@@ -372,8 +389,6 @@
     <string name="scroll_mode_wheel">始终发滚轮</string>
     <string name="scroll_mode_arrows">始终发方向键</string>
     <string name="scroll_mode_hint">智能（推荐）：远端开了鼠标滚动就发滚轮；普通输出滚本地历史；判不出来时什么都不发，避免方向键去翻命令历史。\n始终发滚轮：远端支持鼠标但当前界面没开启跟踪时可试。\n始终发方向键：翻页器（less、man、vim）滚不动时用它——尤其是 mosh 会话，mosh 不传递前台程序信息，只能由你指定。</string>
-    <string name="include_prerelease">包含预览版</string>
-    <string name="include_prerelease_sub">检查更新时也算上 rc 预览版。预览版用于抢先验证新功能，可能不稳定。</string>
     <string name="github_repo">GitHub 仓库</string>
 
     <!-- 0.1.20：凭据存储 / 连接反馈 / 字体说明 -->
@@ -452,4 +467,18 @@
     <string name="alert_channel_desc">远端程序响铃或发出通知时提醒你</string>
     <string name="menu_terminal_alerts">响铃与通知提醒</string>
     <string name="menu_terminal_alerts_sub">远端程序响铃或发出通知序列（OSC 9 / 777）时，如果你不在这个会话里，用系统通知提醒你</string>
+    <!-- Git 改动 -->
+    <string name="git_diff_title">Git 改动</string>
+    <string name="git_diff_loading">正在获取 Git 变更…</string>
+    <string name="git_diff_empty">工作区很干净，没有未提交的改动</string>
+    <string name="git_diff_not_repo">该目录不是 Git 仓库</string>
+    <string name="git_diff_not_installed">远端服务器未安装 Git</string>
+    <string name="git_diff_truncated">改动较多，仅展示前 128 KB 差异</string>
+    <string name="git_diff_no_project_path">当前主机未配置项目目录</string>
+    <string name="git_diff_stat">%1$d 个文件修改 · +%2$d -%3$d</string>
+    <string name="git_status_modified">修改</string>
+    <string name="git_status_added">新增</string>
+    <string name="git_status_deleted">删除</string>
+    <string name="git_status_untracked">未跟踪</string>
+    <string name="git_status_renamed">重命名</string>
 </resources>

@@ -6,7 +6,7 @@
 
 This project **only accepts issue-based reports and does not accept pull requests**. PRs received will be closed automatically.
 
-Please file bugs or suggestions via [issues](https://github.com/briqt/moke/issues). For device-specific problems, include: device model, Android / OS version, and the server environment (whether mosh is installed, locale, etc.).
+Please file bugs or suggestions via [issues](https://github.com/ddwwbb/moke/issues). For device-specific problems, include: device model, Android / OS version, and the server environment (whether mosh is installed, locale, etc.).
 
 ## Local build
 

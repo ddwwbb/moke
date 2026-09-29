@@ -88,6 +88,21 @@ class TransferResumeTest {
     }
 
     @Test
+    fun `取消与失败不能转成上传成功而运行中只成功一次`() {
+        val running = upload(done = 50, total = 100).copy(state = TransferState.RUNNING)
+        val cancelled = running.complete(cancelRequested = true)
+        assertTrue(cancelled.state == TransferState.CANCELLED)
+        assertTrue(cancelled.complete(cancelRequested = false).state == TransferState.CANCELLED)
+
+        val failed = running.copy(state = TransferState.FAILED)
+        assertTrue(failed.complete(cancelRequested = false).state == TransferState.FAILED)
+
+        val done = running.complete(cancelRequested = false)
+        assertTrue(done.state == TransferState.DONE && done.done == 100L)
+        assertTrue(done.complete(cancelRequested = false) == done)
+    }
+
+    @Test
     fun `任务表 JSON 往返保留断点信息`() {
         val t = download(done = 123, size = 456, mtime = 789).copy(
             localUri = "content://x/y",

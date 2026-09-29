@@ -32,7 +32,7 @@ data class FontSpec(
 object FontCatalog {
     const val DEFAULT_ID = "jetbrains_mono"
 
-    val all: List<FontSpec> = listOf(
+    private val rawList: List<FontSpec> = listOf(
         FontSpec(
             id = "jetbrains_mono",
             name = "JetBrains Mono",
@@ -46,7 +46,8 @@ object FontCatalog {
             id = "noto_sans_sc",
             name = "Noto Sans SC",
             nameZh = "思源黑体（Noto Sans SC）",
-            license = "OFL", cjk = true, bundled = true,
+            // 仅 standard 变体打包（maple 变体的 Maple NF CN 已含中文，双份 CJK 纯浪费体积）。
+            license = "OFL", cjk = true, bundled = !com.briqt.moke.BuildConfig.BUNDLE_MAPLE,
             url = null, archive = false, entryHint = "", approxBytes = 0,
             noteRes = R.string.font_note_noto_sans_sc,
         ),
@@ -175,6 +176,11 @@ object FontCatalog {
             noteRes = R.string.font_note_dejavu_sans_mono,
         ),
     )
+
+    /** maple 变体不打包思源黑体（Maple NF CN 已含中文）——从目录一并移除，不显示装不了的死条目。 */
+    val all: List<FontSpec> = rawList.filterNot {
+        com.briqt.moke.BuildConfig.BUNDLE_MAPLE && it.id == "noto_sans_sc"
+    }
 
     fun byId(id: String?): FontSpec = all.firstOrNull { it.id == id } ?: all.first()
 }

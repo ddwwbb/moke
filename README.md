@@ -1,11 +1,11 @@
-<div align="center">
+﻿<div align="center">
 
 # Moke · 墨客
 
 **Native SSH / mosh terminal for Android** (Kotlin + Jetpack Compose)
 
-[![CI](https://github.com/briqt/moke/actions/workflows/ci.yml/badge.svg)](https://github.com/briqt/moke/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/briqt/moke?sort=semver)](https://github.com/briqt/moke/releases)
+[![CI](https://github.com/ddwwbb/moke/actions/workflows/ci.yml/badge.svg)](https://github.com/ddwwbb/moke/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ddwwbb/moke?sort=semver)](https://github.com/ddwwbb/moke/releases)
 [![minSdk](https://img.shields.io/badge/minSdk-24-blue)](#)
 
 </div>
@@ -20,9 +20,9 @@ Moke is a native SSH / mosh terminal for Android. It connects to remote servers 
 
 - **SSH**: password / private-key (PEM) auth; TOFU host-key verification with fingerprint confirmation on first connection; jump host (ProxyJump); per-host startup command (e.g. pick cmd, PowerShell or WSL on a Windows host); run-on-login command; keep-alive heartbeat.
 - **mosh**: bundled native `mosh-client` running as a separate subprocess over a PTY; UDP roaming (survives screen-off and network switches); closing a session also shuts down the remote `mosh-server`.
-- **tmux**: a panel to attach / create / rename / detach / kill remote sessions; optionally attach automatically on connect; optionally let tmux handle swipe scrolling.
-- **Files**: browse remote folders over SFTP (SSH and mosh hosts); upload / download with resume; transfers keep running in the background; send a file's path to the terminal.
-- **Sessions & hosts**: multiple sessions stay resident, with a foreground service keeping connections alive in the background; group / sort (including manual drag-to-reorder); duplicate; per-session titles; clear ended sessions; copy connect command.
+- **tmux**: a panel to attach / create / rename / detach / kill remote sessions; optionally attach automatically on connect. After the app process ends, selecting a saved tmux host attaches again by its remembered session name (not the old terminal scrollback). A saved remote project directory has a separate, explicit workspace entry; the workspace name includes a path-derived suffix to avoid confusing same-named directories.
+- **Files**: browse remote folders over SFTP (SSH and mosh hosts); upload / download with resume; transfers keep running in the background. Files opened from a host with a saved project directory start there. When entered from a terminal, a completed upload adds its shell-quoted remote path to that session’s editable text-block draft; it never sends or presses Enter automatically. Overwriting an existing remote file still requires confirmation. Existing remote file paths can be sent to the terminal manually.
+- **Sessions & hosts**: multiple sessions stay resident, with a foreground service keeping connections alive in the background; group / sort (including manual drag-to-reorder); duplicate; per-session titles; clear ended sessions; copy connect command. Settings → Import / export hosts creates a versioned, non-secret JSON file; import previews every host and requires an Add / Replace / Skip decision per entry. Passwords, private keys, and passphrases are not exported and must be re-entered on the new device.
 - **Terminal**: two-row extra keys plus an expandable full keyboard (editing keys, F1–F12, Ctrl shortcuts) with lockable modifiers; text-block input; three keyboard modes (character / standard / IME first) for comfortable CJK input; copy & paste, including remote clipboard writes (OSC 52); pinch-to-zoom; swipe-to-scroll in full-screen TUIs with a selectable mode, plus jump-to-latest; a top status bar (protocol / host / latency).
 - **Appearance**: live preview; light / dark / follow-system theme with separate terminal color schemes for each; font size / line spacing / letter spacing; cursor style; font management (primary + CJK fallback — a bundled Noto Sans SC subset, plus downloadable Fira Code / Maple Mono / Hack and more, or import your own).
 - **Security, languages & updates**: credentials are encrypted with the Android Keystore (AES-GCM) before being stored and are excluded from system backups; bilingual English / 中文, following the system language by default and switchable in Settings; in-app update check (optionally including pre-releases).
@@ -36,7 +36,7 @@ Moke is a native SSH / mosh terminal for Android. It connects to remote servers 
 
 ## Install
 
-From [Releases](https://github.com/briqt/moke/releases), pick one:
+From [Releases](https://github.com/ddwwbb/moke/releases), pick one:
 
 - `moke-vX.Y.Z.apk` — standard build; CJK fallback is a bundled Noto Sans SC subset (smaller).
 - `moke-vX.Y.Z-maple.apk` — bundles Maple Mono as the default CJK fallback, monospaced CJK out of the box (larger).
@@ -68,7 +68,7 @@ The mosh native artifacts are reproducibly built by [`scripts/build-mosh-native.
 
 ## Feedback
 
-Only [issue](https://github.com/briqt/moke/issues)-based reports are accepted; pull requests are not accepted for now (see [CONTRIBUTING](CONTRIBUTING.md)).
+Only [issue](https://github.com/ddwwbb/moke/issues)-based reports are accepted; pull requests are not accepted for now (see [CONTRIBUTING](CONTRIBUTING.md)).
 
 Community discussion: [学AI，linuxdo](https://linux.do/)
 

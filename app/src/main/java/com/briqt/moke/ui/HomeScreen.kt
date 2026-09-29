@@ -41,7 +41,6 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardAlt
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -106,7 +105,6 @@ import com.briqt.moke.terminal.TermSession
 import com.briqt.moke.ui.theme.MokeDimens
 import com.briqt.moke.ui.theme.MokeMono
 import com.briqt.moke.ui.theme.MokeShapes
-import com.briqt.moke.update.UpdateInfo
 import kotlin.math.abs
 
 /**
@@ -140,6 +138,7 @@ fun HomeScreen(
     onDuplicateHost: (Host) -> Unit,
     onDeleteHost: (Host) -> Unit,
     onConnectHost: (Host) -> Unit,
+    onOpenProject: (Host) -> Unit,
     onReorderHosts: (List<Host>) -> Unit,
     onOpenSession: (String) -> Unit,
     onCloseSession: (String) -> Unit,
@@ -148,9 +147,9 @@ fun HomeScreen(
     onReorderSessions: (List<String>) -> Unit,
     keyboardMode: KeyboardMode,
     confirmClose: Boolean,
-    updateInfo: UpdateInfo?,
     onOpenAppearance: () -> Unit,
     onOpenTerminalSettings: () -> Unit,
+    onOpenHostMigration: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
     // 会话列表里点「关闭」也走二次确认（与终端页 ⋮ 一致），避免误触断掉正在跑的活。
@@ -224,8 +223,7 @@ fun HomeScreen(
             ) {
                 NavItem(tab, HomeTab.Connections, Icons.Filled.Dns, stringResource(R.string.nav_connections), null, onTab)
                 NavItem(tab, HomeTab.Sessions, Icons.Filled.Terminal, stringResource(R.string.nav_sessions), sessions.size.takeIf { it > 0 }, onTab)
-                // 有新版时给「设置」tab 点一个主题色小圆点（顺着分组一路指到「关于」）。
-                NavItem(tab, HomeTab.Settings, Icons.Filled.Settings, stringResource(R.string.nav_settings), null, onTab, dot = updateInfo != null)
+                NavItem(tab, HomeTab.Settings, Icons.Filled.Settings, stringResource(R.string.nav_settings), null, onTab)
             }
         },
         floatingActionButton = {
@@ -239,10 +237,10 @@ fun HomeScreen(
         // 每页内容自己吃 Scaffold 的 padding（原来就是这么写的），所以 pager 本身不加内边距。
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (tabs[page]) {
-                HomeTab.Connections -> ConnectionsContent(padding, hosts, credentialsUnreadable, hostGroupOrder, hostCollapsedGroups, onToggleHostGroupCollapse, onReorderHostGroups, onReorderHosts, onEditHost, onOpenHostFiles, onDuplicateHost, { pendingDeleteHost = it }, onConnectHost)
+                HomeTab.Connections -> ConnectionsContent(padding, hosts, credentialsUnreadable, hostGroupOrder, hostCollapsedGroups, onToggleHostGroupCollapse, onReorderHostGroups, onReorderHosts, onEditHost, onOpenHostFiles, onDuplicateHost, { pendingDeleteHost = it }, onConnectHost, onOpenProject)
                 HomeTab.Sessions -> SessionsContent(padding, sessions, sessionGroupBy, sessionSortBy, onSessionGroupBy, onSessionSortBy, sessionGroupOrder, sessionCollapsedGroups, onToggleSessionGroupCollapse, onReorderSessionGroups, onOpenSession, closeRequest, onDuplicateSession, onReorderSessions, onCloseEndedSessions)
                 HomeTab.Settings -> SettingsMenuContent(
-                    padding, keyboardMode, updateInfo, onOpenAppearance, onOpenTerminalSettings, onOpenAbout,
+                    padding, keyboardMode, onOpenAppearance, onOpenTerminalSettings, onOpenHostMigration, onOpenAbout,
                 )
             }
         }
@@ -328,6 +326,7 @@ private fun ConnectionsContent(
     onDuplicate: (Host) -> Unit,
     onDelete: (Host) -> Unit,
     onConnect: (Host) -> Unit,
+    onOpenProject: (Host) -> Unit,
 ) {
     // 「读不出来」不能伪装成「一台都没有」——那会让用户以为数据没了，
     // 转头新建一条连接就把还在磁盘上的密文覆盖掉（写入已在 HostStore 侧挡住，这里负责说清楚）。
@@ -366,7 +365,7 @@ private fun ConnectionsContent(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) { host, dragging, handle ->
-                HostCard(host, { onConnect(host) }, { onEdit(host) }, { onFiles(host) }, { onDuplicate(host) }, { onDelete(host) }, dragHandle = handle, dragging = dragging)
+                HostCard(host, { onConnect(host) }, { onEdit(host) }, { onFiles(host) }, { onDuplicate(host) }, { onDelete(host) }, { onOpenProject(host) }, dragHandle = handle, dragging = dragging)
             }
         } else {
             val groups = orderedKeys.map { k -> ReorderGroup(k, hosts.filter { keyOf(it) == k }) }
@@ -394,7 +393,7 @@ private fun ConnectionsContent(
                 },
             ) { host, dragging, handle ->
                 // 已按项目分组，分组头展示组名 → 卡片副标题尾部不再重复。
-                HostCard(host, { onConnect(host) }, { onEdit(host) }, { onFiles(host) }, { onDuplicate(host) }, { onDelete(host) }, showGroup = false, dragHandle = handle, dragging = dragging)
+                HostCard(host, { onConnect(host) }, { onEdit(host) }, { onFiles(host) }, { onDuplicate(host) }, { onDelete(host) }, { onOpenProject(host) }, showGroup = false, dragHandle = handle, dragging = dragging)
             }
         }
     }
@@ -556,6 +555,7 @@ private fun HostCard(
     onFiles: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    onOpenProject: () -> Unit,
     // 是否在副标题尾部展示分组名：按项目分组时分组头已展示、置 false 免重复；平铺/不分组时置 true。
     showGroup: Boolean = true,
     dragHandle: Modifier? = null,
@@ -617,6 +617,13 @@ private fun HostCard(
                         leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null) },
                         onClick = { menuOpen = false; onFiles() },
                     )
+                    if (host.projectPath.isNotBlank()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.host_open_project)) },
+                            leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null) },
+                            onClick = { menuOpen = false; onOpenProject() },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.host_duplicate)) },
                         leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
@@ -905,9 +912,9 @@ private fun SessionCard(
 private fun SettingsMenuContent(
     padding: PaddingValues,
     keyboardMode: KeyboardMode,
-    updateInfo: UpdateInfo?,
     onOpenAppearance: () -> Unit,
     onOpenTerminalSettings: () -> Unit,
+    onOpenHostMigration: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -926,14 +933,14 @@ private fun SettingsMenuContent(
         // 而不是继续往这一屏平铺（那样很快就乱）。
         NavRow(Icons.Filled.Palette, stringResource(R.string.menu_appearance), stringResource(R.string.menu_appearance_sub), onOpenAppearance)
         NavRow(Icons.Filled.Terminal, stringResource(R.string.menu_terminal_input), stringResource(R.string.menu_terminal_input_sub), onOpenTerminalSettings)
+        NavRow(Icons.Filled.ContentCopy, stringResource(R.string.host_migration_open), stringResource(R.string.host_migration_sub), onOpenHostMigration)
         NavRow(Icons.Filled.Language, stringResource(R.string.menu_language), langLabel, onClick = { langDialog = true })
         // 有新版时在「关于」上点一个主题色小圆点（静默检查的唯一提示）。
         NavRow(
             Icons.Filled.Info,
             stringResource(R.string.menu_about),
-            updateInfo?.let { stringResource(R.string.update_found, it.tag) } ?: stringResource(R.string.menu_about_sub),
+            stringResource(R.string.menu_about_sub),
             onClick = onOpenAbout,
-            showDot = updateInfo != null,
         )
     }
 

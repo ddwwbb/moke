@@ -29,6 +29,8 @@ import com.briqt.moke.data.Host
 import com.briqt.moke.data.KeyboardMode
 import com.briqt.moke.data.ThemeMode
 import com.briqt.moke.terminal.Tmux
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 /** 底部导航分区。 */
 enum class HomeTab { Connections, Sessions, Settings }
@@ -45,6 +47,7 @@ sealed interface Screen {
     data object TerminalSettings : Screen
     data object Fonts : Screen
     data object About : Screen
+    data object HostMigration : Screen
 
     /**
      * 远端文件页。[sessionId] 非空表示从终端 ⋮ 进来的——只有那种情况才拿得到"终端当前目录"，
@@ -95,9 +98,20 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
     val tmuxScrollSetup by vm.tmuxScrollSetup.collectAsState()
     val tmuxPickerFor by vm.tmuxPicker.collectAsState()
     val scrollMode by vm.scrollMode.collectAsState()
-    val includePrerelease by vm.includePrerelease.collectAsState()
-    val updateInfo by vm.updateInfo.collectAsState()
     val openSessionsRequest by vm.openSessionsRequest.collectAsState()
+    val migrationPreview by vm.migrationPreview.collectAsState()
+    val migrationError by vm.migrationError.collectAsState()
+    val migrationBusy by vm.migrationBusy.collectAsState()
+    val exportFileName = stringResource(R.string.migration_export_name)
+    val gitDiffResult by vm.gitDiffResult.collectAsState()
+    val gitDiffLoading by vm.gitDiffLoading.collectAsState()
+
+    val importHosts = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importHostFile(uri)
+    }
+    val exportHosts = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) vm.exportHostFile(uri)
+    }
 
     // 点后台保活通知：只有一个会话就直接进它，多个就进会话列表；停在文件页的先断开 SFTP。
     LaunchedEffect(openSessionsRequest) {
@@ -120,6 +134,7 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
     val backEnabled = screen !is Screen.Home || homeTab != HomeTab.Connections
     // 打开文件页：断开旧的（若有）并按新主机建连；从终端进时带上会话以取当前目录。
     val openFiles: (Host, String?) -> Unit = { host, sessionId ->
+        vm.setFilesFromSession(sessionId)
         vm.openFiles(host, sessionId?.let { vm.sessions.get(it) })
         screen = Screen.Files(host.id, sessionId)
     }
@@ -129,6 +144,7 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             is Screen.Appearance -> { screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.TerminalSettings -> { screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.About -> { screen = Screen.Home; homeTab = HomeTab.Settings }
+            is Screen.HostMigration -> if (!migrationBusy) { vm.clearHostMigration(); screen = Screen.Home; homeTab = HomeTab.Settings }
             is Screen.Edit -> screen = Screen.Home
             is Screen.Terminal -> screen = Screen.Home
             // 从终端进来的回终端，从连接列表进来的回列表；离开即断开那条 SFTP 连接。
@@ -165,6 +181,7 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             onDuplicateHost = { vm.duplicate(it) },
             onDeleteHost = { vm.delete(it) },
             onConnectHost = { host -> screen = Screen.Terminal(vm.openSession(host)) },
+            onOpenProject = { host -> screen = Screen.Terminal(vm.openProject(host)) },
             onReorderHosts = { vm.reorderHosts(it) },
             onOpenSession = { id -> screen = Screen.Terminal(id) },
             onCloseSession = { id -> vm.closeSession(id) },
@@ -173,9 +190,9 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             onReorderSessions = { vm.reorderSessions(it) },
             keyboardMode = keyboardMode,
             confirmClose = confirmClose,
-            updateInfo = updateInfo,
             onOpenAppearance = { screen = Screen.Appearance },
             onOpenTerminalSettings = { screen = Screen.TerminalSettings },
+            onOpenHostMigration = { vm.clearHostMigration(); screen = Screen.HostMigration },
             onOpenAbout = { screen = Screen.About },
         )
 
@@ -255,6 +272,10 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
                         onTmuxTakeOver = { target ->
                             screen = Screen.Terminal(vm.openTmuxSession(ts, target, detachOthers = true))
                         },
+                        gitDiffResult = gitDiffResult,
+                        gitDiffLoading = gitDiffLoading,
+                        onOpenGitDiff = { vm.loadGitDiff(ts) },
+                        onDismissGitDiff = { vm.dismissGitDiff() },
                         onOpenFiles = { openFiles(ts.host, ts.id) },
                     )
                     // 连接即选会话：主机「会话持久化=tmux」且还没记住选择时，连上后弹一次。
@@ -421,10 +442,18 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             )
         }
 
+        is Screen.HostMigration -> HostMigrationScreen(
+            preview = migrationPreview,
+            error = migrationError,
+            busy = migrationBusy,
+            hasHosts = hosts.isNotEmpty() && !credentialsUnreadable,
+            onPickImport = { importHosts.launch(arrayOf("application/json", "text/plain", "*/*")) },
+            onExport = { exportHosts.launch(exportFileName) },
+            onApply = { vm.applyHostMigration(it) },
+            onBack = { if (!migrationBusy) { vm.clearHostMigration(); screen = Screen.Home; homeTab = HomeTab.Settings } },
+        )
+
         is Screen.About -> AboutScreen(
-            updateInfo = updateInfo,
-            includePrerelease = includePrerelease,
-            onIncludePrerelease = { vm.setIncludePrerelease(it) },
             onBack = { screen = Screen.Home; homeTab = HomeTab.Settings },
         )
     }

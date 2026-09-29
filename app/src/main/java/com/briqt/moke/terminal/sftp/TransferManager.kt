@@ -47,25 +47,33 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
 
     /** 已请求取消的任务 id（工作线程按块检查）。 */
     private val cancelling = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    /** 仍在收尾的取消任务：重试要等旧工作线程退出，不能撤销它的取消标志。 */
+    private val retryAfterCancel = mutableSetOf<String>()
+    private var runningId: String? = null
     private var pump: Job? = null
     private val pumpLock = Any()
 
-    init {
-        scope.launch {
-            // 恢复上次的任务表：上次还在跑的（RUNNING/QUEUED）说明进程被杀了，标成「已中断」等用户决定，
-            // 不自动重开——自动重传可能在计费网络上偷跑流量。
-            val restored = store.load().map {
-                if (it.active) it.copy(state = TransferState.FAILED, error = appContext.localized(R.string.transfer_interrupted))
-                else it
-            }
-            _tasks.value = restored
+    private val restoration = scope.launch {
+        // 入队可能先于磁盘恢复：保留本进程新任务，且不能让恢复出的旧 QUEUED 任务自动重传。
+        val restored = store.load().map {
+            if (it.active) it.copy(state = TransferState.FAILED, error = appContext.localized(R.string.transfer_interrupted))
+            else it
+        }
+        _tasks.update { current ->
+            val ids = current.mapTo(HashSet(current.size)) { it.id }
+            restored.filterNot { it.id in ids } + current
         }
     }
 
     // ---------- 入队 ----------
 
-    /** 上传本地文档（SAF URI）到远端目录。 */
-    fun enqueueUpload(host: Host, uris: List<Uri>, remoteDir: String) {
+    /** 上传本地文档（SAF URI）到远端目录；[onQueued] 在启动传输前同步收到本批任务 ID。 */
+    fun enqueueUpload(
+        host: Host,
+        uris: List<Uri>,
+        remoteDir: String,
+        onQueued: (List<String>) -> Unit = {},
+    ): List<String> {
         val added = uris.map { uri ->
             val (name, size) = queryNameSize(uri)
             TransferTask(
@@ -79,7 +87,10 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
                 createdAt = System.currentTimeMillis(),
             )
         }
+        val ids = added.map { it.id }
+        onQueued(ids)
         addAll(added)
+        return ids
     }
 
     /**
@@ -115,20 +126,33 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
     // ---------- 控制 ----------
 
     fun cancel(id: String) {
-        cancelling += id
-        update(id) { it.copy(state = TransferState.CANCELLED) }
+        synchronized(pumpLock) {
+            if (current(id)?.active != true) return
+            cancelling += id
+            update(id) { it.copy(state = TransferState.CANCELLED) }
+        }
     }
 
     /** 继续/重试：回到队列，由工作线程判断能不能续。 */
     fun retry(id: String) {
-        cancelling -= id
-        update(id) { it.copy(state = TransferState.QUEUED, error = "") }
+        synchronized(pumpLock) {
+            if (current(id)?.state != TransferState.CANCELLED && current(id)?.state != TransferState.FAILED) return
+            if (runningId == id && cancelling.contains(id)) {
+                retryAfterCancel += id
+                return
+            }
+            cancelling -= id
+            update(id) { it.copy(state = TransferState.QUEUED, error = "") }
+        }
         start()
     }
 
     fun remove(id: String) {
-        cancelling += id
-        _tasks.update { list -> list.filterNot { it.id == id } }
+        synchronized(pumpLock) {
+            cancelling += id
+            retryAfterCancel -= id
+            _tasks.update { list -> list.filterNot { it.id == id } }
+        }
         persist()
     }
 
@@ -163,6 +187,7 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
     private suspend fun pumpLoop() {
         val self = kotlin.coroutines.coroutineContext[Job]
         try {
+            restoration.join()
             while (true) {
                 val task = synchronized(pumpLock) {
                     _tasks.value.firstOrNull { it.state == TransferState.QUEUED }
@@ -174,7 +199,11 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
                 // 「排队中」直到进程重启。这里兜住：这条任务算失败，队列继续往下走。
                 runCatching { runOne(task) }.onFailure { t ->
                     if (t is kotlinx.coroutines.CancellationException) throw t
-                    update(task.id) { it.copy(state = TransferState.FAILED, error = describe(t, null)) }
+                    synchronized(pumpLock) {
+                        if (current(task.id)?.state == TransferState.QUEUED || current(task.id)?.state == TransferState.RUNNING) {
+                            update(task.id) { it.copy(state = TransferState.FAILED, error = describe(t, null)) }
+                        }
+                    }
                     persist()
                 }
             }
@@ -189,32 +218,52 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
         val hosts = hostStore.hosts.first()
         val host = hosts.firstOrNull { it.id == task.hostId }
         if (host == null) {
-            update(task.id) {
-                it.copy(state = TransferState.FAILED, error = appContext.localized(R.string.transfer_host_gone))
+            synchronized(pumpLock) {
+                if (current(task.id)?.state == TransferState.QUEUED) {
+                    update(task.id) {
+                        it.copy(state = TransferState.FAILED, error = appContext.localized(R.string.transfer_host_gone))
+                    }
+                }
             }
             return
         }
         val jump = host.jumpHostId.takeIf { it.isNotBlank() && it != host.id }
             ?.let { id -> hosts.firstOrNull { it.id == id } }
 
-        update(task.id) { it.copy(state = TransferState.RUNNING, error = "") }
-        val session = SftpSession(host, jump, appContext)
+        synchronized(pumpLock) {
+            if (current(task.id)?.state != TransferState.QUEUED || cancelling.contains(task.id)) return
+            update(task.id) { it.copy(state = TransferState.RUNNING, error = "") }
+            runningId = task.id
+        }
+        var session: SftpSession? = null
         try {
+            val liveSession = SftpSession(host, jump, appContext)
+            session = liveSession
             when (task.direction) {
-                TransferDirection.DOWNLOAD -> runDownload(task, session)
-                TransferDirection.UPLOAD -> runUpload(task, session)
+                TransferDirection.DOWNLOAD -> runDownload(task, liveSession)
+                TransferDirection.UPLOAD -> runUpload(task, liveSession)
             }
         } catch (t: Throwable) {
-            val cancelled = cancelling.contains(task.id)
-            update(task.id) {
-                it.copy(
-                    state = if (cancelled) TransferState.CANCELLED else TransferState.FAILED,
-                    error = if (cancelled) "" else describe(t, session.consumeNotice()),
-                )
+            synchronized(pumpLock) {
+                if (current(task.id)?.state == TransferState.RUNNING) {
+                    val cancelled = cancelling.contains(task.id)
+                    update(task.id) {
+                        it.copy(
+                            state = if (cancelled) TransferState.CANCELLED else TransferState.FAILED,
+                            error = if (cancelled) "" else describe(t, session?.consumeNotice()),
+                        )
+                    }
+                }
             }
         } finally {
-            cancelling -= task.id
-            runCatching { session.close() }
+            runCatching { session?.close() }
+            synchronized(pumpLock) {
+                runningId = null
+                cancelling -= task.id
+                if (retryAfterCancel.remove(task.id) && current(task.id)?.state == TransferState.CANCELLED) {
+                    update(task.id) { it.copy(state = TransferState.QUEUED, error = "") }
+                }
+            }
             persist()
         }
     }
@@ -299,6 +348,9 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
         // 上传续传要求「远端已有字节数 == 我们记的 done」**完全相等**，而 progress 是节流的：
         // 不把真实落点写回去，取消后 done 恒小于远端实际大小，续传判定必不成立 → 每次都从 0 重传。
         update(task.id) { it.copy(done = pos) }
+        if (localSize >= 0 && pos != localSize) {
+            throw IllegalStateException("Upload incomplete: $pos of $localSize bytes")
+        }
         finish(task.id)
     }
 
@@ -322,21 +374,20 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
     }
 
     private fun finish(id: String) {
-        if (cancelling.contains(id)) {
-            update(id) { it.copy(state = TransferState.CANCELLED) }
-        } else {
-            update(id) { it.copy(state = TransferState.DONE, done = if (it.total >= 0) it.total else it.done) }
-            // 上传成功要通知上层：文件页看的是一次性拉取的列表快照，不刷新的话刚传上去的文件
-            // 根本不出现，用户看不到任何痕迹，只能理解成"传失败了"。
-            current(id)
-                ?.takeIf { it.direction == TransferDirection.UPLOAD }
-                ?.let { onUploadDone?.invoke(it.hostId, RemotePath.parent(it.remotePath)) }
+        val uploaded = synchronized(pumpLock) {
+            val task = current(id)
+            if (task?.state != TransferState.RUNNING) return@synchronized null
+            val finished = task.complete(cancelling.contains(id))
+            update(id) { finished }
+            finished.takeIf { it.state == TransferState.DONE && it.direction == TransferDirection.UPLOAD }
         }
         persist()
+        // 成功通知与队列状态分开：上层抛错不应把已成功上传的文件重标为失败。
+        uploaded?.let { runCatching { onUploadDone?.invoke(it.id, it.hostId, it.remotePath) } }
     }
 
-    /** 上传成功回调（hostId, 远端目录）：上层据此刷新正在看的那个目录。 */
-    var onUploadDone: ((String, String) -> Unit)? = null
+    /** 上传成功回调（任务 ID、主机 ID、远端完整文件路径）；目录刷新可用 RemotePath.parent。 */
+    @Volatile var onUploadDone: ((String, String, String) -> Unit)? = null
 
     // ---------- 小工具 ----------
 
@@ -356,9 +407,17 @@ class TransferManager(context: Context, private val hostStore: HostStore) {
         update(id) { it.copy(done = done) }
     }
 
+    private val saveLock = kotlinx.coroutines.sync.Mutex()
     private fun persist() {
-        val snapshot = _tasks.value
-        scope.launch { store.save(snapshot) }
+        scope.launch {
+            restoration.join()
+            saveLock.lock()
+            try {
+                store.save(_tasks.value)
+            } finally {
+                saveLock.unlock()
+            }
+        }
     }
 
     /**

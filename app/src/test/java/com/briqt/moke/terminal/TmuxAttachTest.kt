@@ -1,6 +1,8 @@
 package com.briqt.moke.terminal
 
+import com.briqt.moke.data.Host
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,5 +105,42 @@ class TmuxAttachTest {
         assertEquals("小说写作", Tmux.defaultSessionName("小说写作"))
         assertEquals("moke", Tmux.defaultSessionName("   "))
         assertEquals("moke", Tmux.defaultSessionName("..."))
+    }
+
+    @Test
+    fun `project sessions distinguish equal basenames without relying on host labels`() {
+        val first = Tmux.projectSessionName(Host(projectPath = "/srv/alpha/api", label = "old"))
+        val second = Tmux.projectSessionName(Host(projectPath = "/srv/beta/api", label = "old"))
+        assertTrue(first.startsWith("moke-api-"))
+        assertTrue(second.startsWith("moke-api-"))
+        assertFalse(first == second)
+        assertEquals(first, Tmux.projectSessionName(Host(projectPath = "/srv/alpha/api", label = "new")))
+        assertEquals(first, Tmux.projectSessionName(Host(projectPath = "/srv/alpha/api///")))
+    }
+
+    @Test
+    fun `project command quotes literal user path and rejects a mismatched session`() {
+        val path = "/srv/O'Brien/\$(touch /tmp/moke-injected)"
+        val cmd = Tmux.attachOrCreateInPathCommand("api", path)
+        assertTrue(cmd.endsWith("sh 'api' '/srv/O'\\''Brien/\$(touch /tmp/moke-injected)'"))
+        assertFalse(cmd.substringBeforeLast(" sh 'api' ").contains("touch /tmp/moke-injected"))
+        assertTrue(cmd.contains("[ \"\$saved\" = \"\$2\" ]"))
+        assertTrue(cmd.contains("project session name conflicts with another directory"))
+        assertTrue(cmd.contains("tmux has-session -t \"=\$1\""))
+        assertFalse(cmd.contains("new-session -A"))
+    }
+
+    @Test
+    fun `project command creates in saved directory and attaches only verified identity`() {
+        val cmd = Tmux.attachOrCreateInPathCommand("work", "/srv/work dir")
+        assertTrue(cmd.contains("[ -d \"\$2\" ]"))
+        assertTrue(cmd.contains("new-session -d -P -F \"#{session_id}\" -s \"\$1\" -c \"\$2\""))
+        assertTrue(cmd.contains("@moke_project_path \"\$2\""))
+        assertTrue(cmd.contains("attach-session -t \"\$session\""))
+        assertTrue(cmd.contains("project directory not found"))
+        assertTrue(cmd.contains("project path must be absolute"))
+        assertEquals(0, Regex("new-session -A").findAll(cmd).count())
+        assertTrue(Tmux.attachOrCreateCommand("work").contains("new-session -A -s \"\$1\""))
+        assertTrue(Tmux.attachOrCreateInPathCommand("work", "/srv/work dir/").endsWith("sh 'work' '/srv/work dir'"))
     }
 }

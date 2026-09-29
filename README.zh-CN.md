@@ -1,11 +1,11 @@
-<div align="center">
+﻿<div align="center">
 
 # Moke · 墨客
 
 **Android 原生 SSH / mosh 终端**（Kotlin + Jetpack Compose）
 
-[![CI](https://github.com/briqt/moke/actions/workflows/ci.yml/badge.svg)](https://github.com/briqt/moke/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/briqt/moke?sort=semver)](https://github.com/briqt/moke/releases)
+[![CI](https://github.com/ddwwbb/moke/actions/workflows/ci.yml/badge.svg)](https://github.com/ddwwbb/moke/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ddwwbb/moke?sort=semver)](https://github.com/ddwwbb/moke/releases)
 [![minSdk](https://img.shields.io/badge/minSdk-24-blue)](#)
 
 </div>
@@ -20,9 +20,9 @@ Moke 是一个 Android 原生 SSH / mosh 终端。它在 app 内直接连接远�
 
 - **SSH**：密码 / 私钥（PEM）认证；主机密钥 TOFU 校验，首次连接先确认指纹；跳板机（ProxyJump）；按主机指定启动命令（如在 Windows 主机上选择 cmd、PowerShell 或 WSL）；登录后自动执行命令；保活心跳。
 - **mosh**：随包 native `mosh-client`，独立子进程 + PTY 运行；UDP 漫游（关屏 / 切网不断线）；关闭会话时一并结束远端 `mosh-server`。
-- **tmux**：面板内附加 / 新建 / 重命名 / 离开 / 关闭远端会话；可设置连接即自动进入；可让 tmux 接管滑动滚屏。
-- **文件**：经 SFTP 浏览远端目录（SSH 与 mosh 主机均可）；上传 / 下载支持断点续传；传输在后台继续；可把文件路径发送到终端。
-- **会话与连接**：多会话常驻，前台服务在后台保持连接；分组 / 排序（含手动拖动）；创建副本；自定义会话标题；一键清理已结束会话；复制连接命令。
+- **tmux**：面板内附加 / 新建 / 重命名 / 离开 / 关闭远端会话；可设置连接即自动进入。应用进程结束后，重新选择已记住 tmux 名称的主机可按名重新附加，不恢复旧终端滚屏。主机可单独保存远端项目目录，菜单中显式打开项目工作区；不同目录即使同名也不会附错。
+- **文件**：经 SFTP 浏览远端目录（SSH 与 mosh 主机均可）；上传 / 下载支持断点续传；传输在后台继续。从已保存项目目录的主机进入文件页时默认打开该目录；从终端进入文件页上传，文件完成后才把 shell 转义的远端路径放进原会话的可编辑文本草稿，不自动发送或回车。覆盖远端同名文件仍须确认；已有远端文件也可手动发送路径到终端。
+- **会话与连接**：多会话常驻，前台服务在后台保持连接；分组 / 排序（含手动拖动）；创建副本；自定义会话标题；一键清理已结束会话；复制连接命令。设置 → 导入 / 导出主机可生成版本化非秘密 JSON；导入逐条预览并选择新增 / 覆盖 / 跳过。密码、私钥和私钥口令不导出，新设备需重新填写。
 - **终端**：双排附加键 + 可展开的全键盘（编辑键、F1–F12、Ctrl 组合键），修饰键可锁定；文本段输入；三种键盘模式（字符模式 / 标准 / 输入法优先），中文输入顺畅；复制粘贴，支持远端写入剪贴板（OSC 52）；捏合缩放；全屏 TUI 内滑动滚屏（模式可选）与「跳到底部」；顶部状态条（协议 / 主机 / 延迟）。
 - **外观**：实时预览；浅色 / 深色 / 跟随系统，两种模式可分别指定终端配色；字号 / 行距 / 字间距、光标样式可调；字体管理（主字体 + 中文回退——内置思源黑体子集，可下载 Fira Code / Maple Mono / Hack 等，也可导入本地字体）。
 - **安全、多语言与更新**：连接凭据经 Android Keystore（AES-GCM）加密后存储，且不进入系统备份；中英双语，默认跟随系统语言，设置内可切换；应用内检查更新（可选包含预览版）。
@@ -36,7 +36,7 @@ Moke 是一个 Android 原生 SSH / mosh 终端。它在 app 内直接连接远�
 
 ## 安装
 
-前往 [Releases](https://github.com/briqt/moke/releases) 择一下载：
+前往 [Releases](https://github.com/ddwwbb/moke/releases) 择一下载：
 
 - `moke-vX.Y.Z.apk` — 常规包，中文回退用内置思源黑体子集（体积小）。
 - `moke-vX.Y.Z-maple.apk` — 自带 Maple Mono 并设为默认中文回退，开箱中英等宽（体积更大）。
@@ -67,7 +67,7 @@ mosh native 产物由 [`scripts/build-mosh-native.sh`](scripts/build-mosh-native
 
 ## 反馈
 
-仅接受 [issue](https://github.com/briqt/moke/issues) 形式的问题反馈，暂不接受 PR（详见 [CONTRIBUTING](CONTRIBUTING.zh-CN.md)）。
+仅接受 [issue](https://github.com/ddwwbb/moke/issues) 形式的问题反馈，暂不接受 PR（详见 [CONTRIBUTING](CONTRIBUTING.zh-CN.md)）。
 
 交流社区：[学AI，linuxdo](https://linux.do/)
 

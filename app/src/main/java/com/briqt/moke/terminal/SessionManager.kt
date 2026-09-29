@@ -63,6 +63,11 @@ class TermSession(
 
     /** 最后活动时间（有终端输出即刷新）：用于「更新时间」排序。非响应式（普通 volatile），列表重组时读当前值即可，避免高频重排抖动。 */
     @Volatile var lastActivityAt: Long = startedAt
+    /** 文本段草稿随终端会话存活；离开文件页或切换终端 View 不丢失。 */
+    val composerDraft = MutableStateFlow("")
+    val draftNeedsReview = MutableStateFlow(false)
+    /** 仅本进程有效：上传任务完成后，属于本终端的路径才可进入草稿。 */
+    val pendingDraftUploads: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
     /** tmux 管理完整状态；明确区分检查中、零会话、未安装与失败。 */
     val tmuxState: MutableStateFlow<TmuxUiState> = MutableStateFlow(TmuxUiState())
