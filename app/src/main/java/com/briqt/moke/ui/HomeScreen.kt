@@ -106,6 +106,7 @@ import com.briqt.moke.ui.theme.MokeDimens
 import com.briqt.moke.ui.theme.MokeMono
 import com.briqt.moke.ui.theme.MokeShapes
 import kotlin.math.abs
+import com.briqt.moke.update.UpdateInfo
 
 /**
  * 主界面：底部导航「连接 · 会话 · 设置」三分区，内容区可左右滑动切换（顺序同底栏）。
@@ -147,6 +148,7 @@ fun HomeScreen(
     onReorderSessions: (List<String>) -> Unit,
     keyboardMode: KeyboardMode,
     confirmClose: Boolean,
+    updateInfo: UpdateInfo?,
     onOpenAppearance: () -> Unit,
     onOpenTerminalSettings: () -> Unit,
     onOpenHostMigration: () -> Unit,
@@ -223,7 +225,7 @@ fun HomeScreen(
             ) {
                 NavItem(tab, HomeTab.Connections, Icons.Filled.Dns, stringResource(R.string.nav_connections), null, onTab)
                 NavItem(tab, HomeTab.Sessions, Icons.Filled.Terminal, stringResource(R.string.nav_sessions), sessions.size.takeIf { it > 0 }, onTab)
-                NavItem(tab, HomeTab.Settings, Icons.Filled.Settings, stringResource(R.string.nav_settings), null, onTab)
+                NavItem(tab, HomeTab.Settings, Icons.Filled.Settings, stringResource(R.string.nav_settings), null, onTab, dot = updateInfo != null)
             }
         },
         floatingActionButton = {
@@ -240,7 +242,7 @@ fun HomeScreen(
                 HomeTab.Connections -> ConnectionsContent(padding, hosts, credentialsUnreadable, hostGroupOrder, hostCollapsedGroups, onToggleHostGroupCollapse, onReorderHostGroups, onReorderHosts, onEditHost, onOpenHostFiles, onDuplicateHost, { pendingDeleteHost = it }, onConnectHost, onOpenProject)
                 HomeTab.Sessions -> SessionsContent(padding, sessions, sessionGroupBy, sessionSortBy, onSessionGroupBy, onSessionSortBy, sessionGroupOrder, sessionCollapsedGroups, onToggleSessionGroupCollapse, onReorderSessionGroups, onOpenSession, closeRequest, onDuplicateSession, onReorderSessions, onCloseEndedSessions)
                 HomeTab.Settings -> SettingsMenuContent(
-                    padding, keyboardMode, onOpenAppearance, onOpenTerminalSettings, onOpenHostMigration, onOpenAbout,
+                    padding, keyboardMode, updateInfo, onOpenAppearance, onOpenTerminalSettings, onOpenHostMigration, onOpenAbout,
                 )
             }
         }
@@ -912,6 +914,7 @@ private fun SessionCard(
 private fun SettingsMenuContent(
     padding: PaddingValues,
     keyboardMode: KeyboardMode,
+    updateInfo: UpdateInfo?,
     onOpenAppearance: () -> Unit,
     onOpenTerminalSettings: () -> Unit,
     onOpenHostMigration: () -> Unit,
@@ -941,6 +944,7 @@ private fun SettingsMenuContent(
             stringResource(R.string.menu_about),
             stringResource(R.string.menu_about_sub),
             onClick = onOpenAbout,
+            showDot = updateInfo != null,
         )
     }
 

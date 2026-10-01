@@ -6,6 +6,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.briqt.moke.MokeApplication
+import com.briqt.moke.BuildConfig
 import com.briqt.moke.R
 import com.briqt.moke.localized
 import com.briqt.moke.data.Host
@@ -30,6 +31,10 @@ import com.briqt.moke.data.SettingsStore
 import com.briqt.moke.data.ThemeMode
 import com.briqt.moke.terminal.FontRepository
 import com.briqt.moke.terminal.TerminalThemes
+import com.briqt.moke.update.UpdateChecker
+import com.briqt.moke.update.UpdateInfo
+import com.briqt.moke.update.UpdateStatus
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -160,6 +165,63 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     val hostKeyRequest: StateFlow<HostKeyPrompt.Request?> = HostKeyPrompt.pending
 
     fun resolveHostKey(id: String, trusted: Boolean) = HostKeyPrompt.resolve(id, trusted)
+
+    val includePrerelease: StateFlow<Boolean> = settings.includePrerelease
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val updateInfo: StateFlow<UpdateInfo?> = settings.updateCheckRecord
+        .map { record ->
+            record.info?.takeIf {
+                UpdateChecker.isNewer(it.tag, BuildConfig.VERSION_NAME) &&
+                    it.url.startsWith("${UpdateChecker.REPO_URL}/releases/tag/")
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
+    val updateStatus: StateFlow<UpdateStatus> = _updateStatus.asStateFlow()
+    private var updateJob: Job? = null
+    private var updateLocale: String? = null
+
+    fun checkUpdate(force: Boolean = true) {
+        updateJob?.cancel()
+        updateJob = viewModelScope.launch { performUpdateCheck(force) }
+    }
+
+    fun onUpdateLocale(locale: String) {
+        if (updateLocale != null && updateLocale != locale) {
+            updateJob?.cancel()
+            _updateStatus.value = UpdateStatus.Idle
+        }
+        updateLocale = locale
+    }
+
+    fun setIncludePrerelease(enabled: Boolean) {
+        updateJob?.cancel()
+        updateJob = viewModelScope.launch {
+            settings.setIncludePrerelease(enabled)
+            performUpdateCheck(force = true)
+        }
+    }
+
+    private suspend fun performUpdateCheck(force: Boolean) {
+        val record = settings.updateCheckRecord.first()
+        val now = System.currentTimeMillis()
+        // 持久化的是 UTC epoch 毫秒；系统时钟回拨时重新检查，不能无限节流。
+        if (!force && now >= record.checkedAt && now - record.checkedAt < 6 * 60 * 60 * 1000L) return
+        _updateStatus.value = UpdateStatus.Checking
+        val result = UpdateChecker.check(
+            BuildConfig.VERSION_NAME,
+            getApplication(),
+            settings.includePrerelease.first(),
+        )
+        when (result) {
+            is UpdateStatus.Available -> settings.recordUpdateCheck(now, UpdateInfo(result.latest, result.url))
+            is UpdateStatus.UpToDate -> settings.recordUpdateCheck(now, null)
+            else -> Unit // 失败不覆盖上次发现的新版，也不弹窗打扰；关于页可查看并重试。
+        }
+        _updateStatus.value = result
+    }
     /** 修复 rc.1 可能把运行态 `tmux attach-session -t '$N'` 污染进保存连接的问题。 */
     private fun repairLegacyTmuxLoginCommands() = viewModelScope.launch(Dispatchers.IO) {
         val current = store.hosts.first()
@@ -894,6 +956,7 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     // 放在类末尾：init 里要用到上面声明的 settings / appVersion，Kotlin 按声明顺序初始化，提前放会 NPE。
     init {
         repairLegacyTmuxLoginCommands()
+        checkUpdate(force = false)
     }
 
     private companion object {

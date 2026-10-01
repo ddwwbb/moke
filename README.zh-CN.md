@@ -23,9 +23,9 @@ Moke 是一个 Android 原生 SSH / mosh 终端。它在 app 内直接连接远�
 - **tmux**：面板内附加 / 新建 / 重命名 / 离开 / 关闭远端会话；可设置连接即自动进入。应用进程结束后，重新选择已记住 tmux 名称的主机可按名重新附加，不恢复旧终端滚屏。主机可单独保存远端项目目录，菜单中显式打开项目工作区；不同目录即使同名也不会附错。
 - **文件**：经 SFTP 浏览远端目录（SSH 与 mosh 主机均可）；上传 / 下载支持断点续传；传输在后台继续。从已保存项目目录的主机进入文件页时默认打开该目录；从终端进入文件页上传，文件完成后才把 shell 转义的远端路径放进原会话的可编辑文本草稿，不自动发送或回车。覆盖远端同名文件仍须确认；已有远端文件也可手动发送路径到终端。
 - **会话与连接**：多会话常驻，前台服务在后台保持连接；分组 / 排序（含手动拖动）；创建副本；自定义会话标题；一键清理已结束会话；复制连接命令。设置 → 导入 / 导出主机可生成版本化非秘密 JSON；导入逐条预览并选择新增 / 覆盖 / 跳过。密码、私钥和私钥口令不导出，新设备需重新填写。
-- **终端**：双排附加键 + 可展开的全键盘（编辑键、F1–F12、Ctrl 组合键），修饰键可锁定；文本段输入；三种键盘模式（字符模式 / 标准 / 输入法优先），中文输入顺畅；复制粘贴，支持远端写入剪贴板（OSC 52）；捏合缩放；全屏 TUI 内滑动滚屏（模式可选）与「跳到底部」；顶部状态条（协议 / 主机 / 延迟）。
-- **外观**：实时预览；浅色 / 深色 / 跟随系统，两种模式可分别指定终端配色；字号 / 行距 / 字间距、光标样式可调；字体管理（主字体 + 中文回退——内置思源黑体子集，可下载 Fira Code / Maple Mono / Hack 等，也可导入本地字体）。
-- **安全、多语言与更新**：连接凭据经 Android Keystore（AES-GCM）加密后存储，且不进入系统备份；中英双语，默认跟随系统语言，设置内可切换；应用内检查更新（可选包含预览版）。
+- **终端**：双排附加键支持默认 / 编辑 / 功能键 / 控制键 / 自定义五种布局，自定义可替换 12 个键位；可展开全键盘，修饰键可锁定；文本段输入；三种键盘模式（字符模式 / 标准 / 输入法优先），中文输入顺畅；复制粘贴，支持远端写入剪贴板（OSC 52）；捏合缩放；全屏 TUI 内滑动滚屏（模式可选）与「跳到底部」；顶部状态条（协议 / 主机 / 延迟）。
+- **外观**：实时预览；浅色 / 深色 / 跟随系统，两种模式可分别指定终端配色；字号 / 行距 / 字间距、光标样式可调；统一内置 Maple Mono NF CN unhinted，包含中文和 Nerd 字形，不再提供字体下载、导入或管理。
+- **安全、多语言与更新**：连接凭据经 Android Keystore（AES-GCM）加密后存储，且不进入系统备份；中英双语，默认跟随系统语言，设置内可切换。关于页可手动检查更新并选择包含预览版，仅查询 `ddwwbb/moke` 的发行版；启动时静默检查，成功结果缓存 6 小时，发现新版后在设置 / 关于入口显示圆点。新版入口打开对应发行页，不自动下载或安装；暂无符合条件的发行版时明确说明。
 
 ## 截图
 
@@ -38,8 +38,7 @@ Moke 是一个 Android 原生 SSH / mosh 终端。它在 app 内直接连接远�
 
 前往 [Releases](https://github.com/ddwwbb/moke/releases) 择一下载：
 
-- `moke-vX.Y.Z.apk` — 常规包，中文回退用内置思源黑体子集（体积小）。
-- `moke-vX.Y.Z-maple.apk` — 自带 Maple Mono 并设为默认中文回退，开箱中英等宽（体积更大）。
+- `moke-vX.Y.Z.apk` / `moke-vX.Y.Z-maple.apk` — 两包均使用同一内置 Maple Mono NF CN unhinted 字体，保留两个发行名称以兼容已有渠道。
 
 允许"安装未知来源应用"后安装。发布包使用固定签名，可覆盖升级。
 
@@ -56,14 +55,15 @@ Moke 是一个 Android 原生 SSH / mosh 终端。它在 app 内直接连接远�
 需要 JDK 17 + Android SDK（compileSdk 35 / build-tools 35）。在项目根创建 `local.properties` 指向 SDK：`sdk.dir=/path/to/Android/sdk`。
 
 ```bash
-./gradlew assembleStandardDebug   # 常规调试 APK
-./gradlew testDebugUnitTest       # 单元测试
-
-# maple 变体自带 Maple Mono 作默认中文回退；先取字体（OFL，约 20MB，不入库）再构建：
-./scripts/fetch-maple-font.sh && ./gradlew assembleMapleDebug
+# 常规调试 APK
+./gradlew assembleStandardDebug
+# 单元测试：终端模块与应用 Standard 变体
+./gradlew testDebugUnitTest testStandardDebugUnitTest
+# Maple 调试 APK，字体已内置，无需额外下载
+./gradlew assembleMapleDebug
 ```
 
-mosh native 产物由 [`scripts/build-mosh-native.sh`](scripts/build-mosh-native.sh) 从公开源码（mosh 1.4.0 + rjyo/mosh-android 预编译库）复现构建，需 NDK r29；GPLv3 二进制不入库。maple 变体内置字体由 [`scripts/fetch-maple-font.sh`](scripts/fetch-maple-font.sh) 获取（OFL，不入库）。
+mosh native 产物由 [`scripts/build-mosh-native.sh`](scripts/build-mosh-native.sh) 从公开源码（mosh 1.4.0 + rjyo/mosh-android 预编译库）复现构建，需 NDK r29；GPLv3 二进制不入库。
 
 ## 反馈
 

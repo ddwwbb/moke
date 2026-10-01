@@ -445,4 +445,13 @@ Its saved password / private key and host fingerprint are removed too. This can\
     <string name="git_status_deleted">Deleted</string>
     <string name="git_status_untracked">Untracked</string>
     <string name="git_status_renamed">Renamed</string>
+    <!-- Fork release updates -->
+    <string name="check_update">Check for updates</string>
+    <string name="up_to_date">You are up to date</string>
+    <string name="new_version">View %1$s</string>
+    <string name="include_prerelease">Include pre-releases</string>
+    <string name="include_prerelease_sub">Also check preview releases published by ddwwbb/moke</string>
+    <string name="update_none">No eligible releases have been published by ddwwbb/moke</string>
+    <string name="update_parse_failed">Could not read release version or link</string>
+    <string name="update_timeout">Update check timed out</string>
 </resources>

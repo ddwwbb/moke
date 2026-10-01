@@ -441,4 +441,13 @@
     <string name="git_status_deleted">删除</string>
     <string name="git_status_untracked">未跟踪</string>
     <string name="git_status_renamed">重命名</string>
+    <!-- Fork release updates -->
+    <string name="check_update">检查更新</string>
+    <string name="up_to_date">已是最新版本</string>
+    <string name="new_version">查看 %1$s</string>
+    <string name="include_prerelease">包含预览版</string>
+    <string name="include_prerelease_sub">同时检查 ddwwbb/moke 发布的预览版本</string>
+    <string name="update_none">ddwwbb/moke 暂无符合条件的发行版</string>
+    <string name="update_parse_failed">无法读取发行版版本号或链接</string>
+    <string name="update_timeout">检查更新超时</string>
 </resources>

@@ -2,6 +2,20 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增 / Added
+- 恢复上游的应用内检查更新、包含预览版开关与静默新版提示，但仅查询 `ddwwbb/moke` 的发行版。新版本入口打开对应发行页，不自动下载或安装；设置开关跨重启保留，成功的启动检查在 6 小时内不重复请求。
+- Restored the upstream in-app update check, pre-release toggle and silent new-release dot, querying only `ddwwbb/moke` releases. The entry point opens the matching release page without auto-download or install; the toggle persists across restarts, and a successful startup check is not repeated within six hours.
+
+### 修复 / Fixed
+- 更新比较兼容当前 `0.9` 两段版本号，不向预览版用户推荐降级；拒绝无效版本与非 fork 发行页。仓库暂无符合条件的发行版时明确说明，不误报「已是最新版本」；更新缓存与旧上游缓存隔离。发行列表按分页遍历，第 2 页之后的稳定版也能被发现。
+- Update comparison accepts the current two-segment `0.9` version and never suggests a downgrade to pre-release users; invalid versions and non-fork release pages are rejected. An empty release feed is reported explicitly instead of a false "up to date", and update cache keys are isolated from the legacy upstream cache. Release listing follows pagination so a stable release beyond page one is still found.
+- 关于页的检查结果只显示实际状态或错误，不附加「可点检查更新重试」提示；检查按钮保持可用。
+- The About page shows only the actual check status or error, without an appended "tap to retry" hint; the check button stays available.
+- 应用内切换语言时清除旧语言的更新检查结果，保留预览版偏好；再次检查使用当前语言。
+- Switching the in-app language clears the stale update result in the old language while keeping the pre-release preference; the next check uses the current language.
+
 ## [0.9]
 
 ### 新增

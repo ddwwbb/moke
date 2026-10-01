@@ -7,12 +7,16 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.briqt.moke.terminal.TerminalThemes
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
+import com.briqt.moke.update.UpdateInfo
+
+data class UpdateCheckRecord(val checkedAt: Long, val info: UpdateInfo?)
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "moke_settings")
 
@@ -55,6 +59,11 @@ class SettingsStore(private val context: Context) {
     // 首次连接一台新主机时，是否直接信任它的主机密钥（不弹确认）。
     private val autoTrustNewHostKeyKey = booleanPreferencesKey("auto_trust_new_host_key")
     private val terminalAlertsKey = booleanPreferencesKey("terminal_alerts")
+    // fork 专用键，不能复用早期上游版本留下的更新缓存。
+    private val lastUpdateCheckKey = longPreferencesKey("fork_last_update_check_at")
+    private val latestSeenTagKey = stringPreferencesKey("fork_latest_seen_tag")
+    private val latestSeenUrlKey = stringPreferencesKey("fork_latest_seen_url")
+    private val includePrereleaseKey = booleanPreferencesKey("fork_include_prerelease")
     // 下载目录（SAF 目录树 URI，已持久化读写授权）；空=还没选过，首次下载时问一次。
     private val downloadTreeKey = stringPreferencesKey("download_tree_uri")
     // 文件页：是否显示隐藏文件 + 排序方式。
@@ -170,6 +179,41 @@ class SettingsStore(private val context: Context) {
      */
     val autoTrustNewHostKey: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
         prefs[autoTrustNewHostKeyKey] ?: false
+    }
+
+    val includePrerelease: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
+        prefs[includePrereleaseKey] ?: false
+    }
+
+    val updateCheckRecord: Flow<UpdateCheckRecord> = context.settingsDataStore.data.map { prefs ->
+        val tag = prefs[latestSeenTagKey].orEmpty()
+        val url = prefs[latestSeenUrlKey].orEmpty()
+        UpdateCheckRecord(
+            checkedAt = prefs[lastUpdateCheckKey] ?: 0L,
+            info = if (tag.isNotBlank() && url.isNotBlank()) UpdateInfo(tag, url) else null,
+        )
+    }
+
+    suspend fun setIncludePrerelease(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[includePrereleaseKey] = enabled
+            prefs.remove(lastUpdateCheckKey)
+            prefs.remove(latestSeenTagKey)
+            prefs.remove(latestSeenUrlKey)
+        }
+    }
+
+    suspend fun recordUpdateCheck(checkedAt: Long, info: UpdateInfo?) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[lastUpdateCheckKey] = checkedAt
+            if (info == null) {
+                prefs.remove(latestSeenTagKey)
+                prefs.remove(latestSeenUrlKey)
+            } else {
+                prefs[latestSeenTagKey] = info.tag
+                prefs[latestSeenUrlKey] = info.url
+            }
+        }
     }
 
     /** 下载目录（SAF 目录树 URI 字符串；空=未选）。 */

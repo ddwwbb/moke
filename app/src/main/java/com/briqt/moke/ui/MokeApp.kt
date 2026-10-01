@@ -93,12 +93,17 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
     val tmuxPickerFor by vm.tmuxPicker.collectAsState()
     val scrollMode by vm.scrollMode.collectAsState()
     val openSessionsRequest by vm.openSessionsRequest.collectAsState()
+    val includePrerelease by vm.includePrerelease.collectAsState()
+    val updateInfo by vm.updateInfo.collectAsState()
+    val updateStatus by vm.updateStatus.collectAsState()
     val migrationPreview by vm.migrationPreview.collectAsState()
     val migrationError by vm.migrationError.collectAsState()
     val migrationBusy by vm.migrationBusy.collectAsState()
     val exportFileName = stringResource(R.string.migration_export_name)
     val gitDiffResult by vm.gitDiffResult.collectAsState()
     val gitDiffLoading by vm.gitDiffLoading.collectAsState()
+    val updateLocale = LocalContext.current.resources.configuration.locales.toLanguageTags()
+    LaunchedEffect(updateLocale) { vm.onUpdateLocale(updateLocale) }
 
     val importHosts = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importHostFile(uri)
@@ -183,6 +188,7 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
             onReorderSessions = { vm.reorderSessions(it) },
             keyboardMode = keyboardMode,
             confirmClose = confirmClose,
+            updateInfo = updateInfo,
             onOpenAppearance = { screen = Screen.Appearance },
             onOpenTerminalSettings = { screen = Screen.TerminalSettings },
             onOpenHostMigration = { vm.clearHostMigration(); screen = Screen.HostMigration },
@@ -434,6 +440,11 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
         )
 
         is Screen.About -> AboutScreen(
+            updateStatus = updateStatus,
+            updateInfo = updateInfo,
+            includePrerelease = includePrerelease,
+            onCheckUpdate = { vm.checkUpdate() },
+            onIncludePrerelease = { vm.setIncludePrerelease(it) },
             onBack = { screen = Screen.Home; homeTab = HomeTab.Settings },
         )
     }
