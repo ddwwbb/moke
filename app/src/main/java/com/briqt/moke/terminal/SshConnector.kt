@@ -3,8 +3,6 @@ package com.briqt.moke.terminal
 import android.content.Context
 import com.briqt.moke.data.AuthType
 import com.briqt.moke.data.Host
-import net.schmizz.keepalive.KeepAliveProvider
-import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.File
@@ -34,14 +32,8 @@ class SshConnector(
      * 略大于确认弹窗自身的超时，否则"仔细核对完再点信任"必然连不上。
      */
     fun newClient(heartbeat: Boolean = false, awaitsTrust: Boolean = false): SSHClient {
-        val config = DefaultConfig().apply {
-            if (heartbeat) keepAliveProvider = KeepAliveProvider.HEARTBEAT
-        }
-        return SSHClient(config).apply {
+        return (if (heartbeat) HeartbeatSshClient() else SSHClient()).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
-            // SSHJ 在 onConnect() 按 isEnabled() 启动心跳线程；必须在 connect 前给间隔。
-            // 放在工厂里让目标与跳板两条长连接都生效，短连接仍保持默认关闭。
-            if (heartbeat) connection.keepAlive.keepAliveInterval = KEEP_ALIVE_INTERVAL_SECONDS
             if (awaitsTrust) transport.timeoutMs = TRUST_PROMPT_TIMEOUT_MS
             addHostKeyVerifier(MokeHostKeyVerifier(KnownHosts(appContext), appContext, onNotice))
         }
@@ -123,7 +115,6 @@ class SshConnector(
 
     companion object {
         const val CONNECT_TIMEOUT_MS = 15000
-        private const val KEEP_ALIVE_INTERVAL_SECONDS = 30
 
         /** 首连等用户确认指纹时的握手超时（略大于 HostKeyPrompt 自己的 120s）。 */
         private const val TRUST_PROMPT_TIMEOUT_MS = 150_000

@@ -11,6 +11,10 @@
 - Restored the upstream in-app update check, pre-release toggle and silent new-release dot, querying only `ddwwbb/moke` releases. The entry point opens the matching release page without auto-download or install; the toggle persists across restarts, and a successful startup check is not repeated within six hours.
 
 ### 修复 / Fixed
+- 修复 SSH 长连接偶发报 `strict KEX violation: KEXINIT was not the first packet`：协议心跳在初始密钥交换完成后才启动，避免 `IGNORE` 抢先于 `KEXINIT`；直连、跳板机及经跳板转发的目标连接均保留 30 秒心跳和 Strict KEX 检查。
+- Fixed intermittent strict KEX failures on long-lived SSH connections by starting protocol heartbeats only after the initial key exchange. Direct, jump-host and forwarded target connections retain 30-second heartbeats and Strict KEX checks.
+- `v0.9.3` 替换包的 `versionCode` 提升为 50。签名改为本机固定 Debug 证书，与此前 CI 临时证书不同；已安装旧包必须卸载后重新安装，卸载可能丢失本地连接配置，请先备份。
+- The replacement `v0.9.3` APKs use versionCode 50 and a fixed local Debug certificate instead of the previous temporary CI certificate. Existing installations must be uninstalled before reinstalling; back up local connection settings first.
 - 更新比较兼容当前 `0.9` 两段版本号，不向预览版用户推荐降级；拒绝无效版本与非 fork 发行页。仓库暂无符合条件的发行版时明确说明，不误报「已是最新版本」；更新缓存与旧上游缓存隔离。发行列表按分页遍历，第 2 页之后的稳定版也能被发现。
 - Update comparison accepts the current two-segment `0.9` version and never suggests a downgrade to pre-release users; invalid versions and non-fork release pages are rejected. An empty release feed is reported explicitly instead of a false "up to date", and update cache keys are isolated from the legacy upstream cache. Release listing follows pagination so a stable release beyond page one is still found.
 - 关于页的检查结果只显示实际状态或错误，不附加「可点检查更新重试」提示；检查按钮保持可用。
