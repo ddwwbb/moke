@@ -126,7 +126,6 @@ class TmuxAttachTest {
         assertFalse(cmd.substringBeforeLast(" sh 'api' ").contains("touch /tmp/moke-injected"))
         assertTrue(cmd.contains("[ \"\$saved\" = \"\$2\" ]"))
         assertTrue(cmd.contains("project session name conflicts with another directory"))
-        assertTrue(cmd.contains("tmux has-session -t \"=\$1\""))
         assertFalse(cmd.contains("new-session -A"))
     }
 

@@ -242,6 +242,7 @@
     <string name="notif_channel_name">Session keep-alive</string>
     <string name="notif_channel_desc">Keeps SSH / mosh sessions alive in the background</string>
     <string name="notif_sessions_active">%1$d session(s) kept in the background</string>
+    <string name="session_keepalive_failed">Could not start background session keep-alive. The connection may drop when the app is backgrounded.</string>
     <string name="notif_transfer_channel_name">File transfers</string>
     <string name="notif_transfer_channel_desc">Keeps uploads and downloads running in the background</string>
     <string name="notif_transfer_title">Transferring files</string>
@@ -360,6 +361,11 @@
     <string name="menu_tmux_scroll_setup_sub">After attaching, enables mouse mode for that session and binds the wheel so pagers page and prompts scroll history. Adds a root-table key binding on the remote tmux server.</string>
     <string name="menu_keep_screen_on">Keep screen on in terminal</string>
     <string name="menu_keep_screen_on_sub">Stays awake while a terminal tab is open; uses more battery</string>
+    <string name="menu_background_battery">Background session battery settings</string>
+    <string name="background_battery_exempt">Battery optimization: exempt · Tap to open system settings</string>
+    <string name="background_battery_optimized">Battery optimization: not exempt · Tap to request an exemption</string>
+    <string name="background_battery_help">Active or connecting sessions keep the CPU and Wi-Fi awake and send SSH heartbeats, which uses more battery. An exemption may improve screen-off connections, but network changes and manufacturer restrictions can still disconnect them. Some devices also require allowing background activity or auto-start in their system settings.</string>
+    <string name="background_battery_settings_failed">Could not open the system battery settings. Open Settings → Apps → Moke → Battery to adjust background restrictions manually.</string>
     <string name="host_persistence">Session persistence</string>
     <string name="persistence_none">None</string>
     <string name="persistence_tmux">tmux (attach on connect)</string>

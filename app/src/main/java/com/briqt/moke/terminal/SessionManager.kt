@@ -3,6 +3,7 @@ package com.briqt.moke.terminal
 import android.content.Context
 import com.briqt.moke.R
 import com.briqt.moke.data.Host
+import com.briqt.moke.terminal.sftp.RemotePath
 import com.briqt.moke.localized
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalTransport
@@ -52,10 +53,12 @@ class TermSession(
      * 它不是标题内容：仅在同主机实际展示标题冲突时临时出现，自定义标题时永不强加。
      */
     val copyMark: String? = null,
-    /** 由 tmux 面板打开的远端 session ID；断开/删除/远端消失后清空。 */
+    /** 当前远端关联；显式 detach/删除或远端消失后清空，网络断开不清空。 */
     val remoteTmuxId: MutableStateFlow<String?>,
     /** tmux 跨连接恢复身份；ID 随 server 重启变化时用名称重新收敛。 */
     val remoteTmuxName: MutableStateFlow<String?>,
+    /** 独立的手动恢复目标；断线、显式分离或附加失败不丢失，恢复时仍须校验远端存在。 */
+    val tmuxRecovery: MutableStateFlow<TmuxRecovery?>,
     /** OSC 7 上报的 shell 当前目录；远端未上报时为 null。 */
     val lastReportedCwd: MutableStateFlow<String?>,
     val startedAt: Long,
@@ -87,6 +90,8 @@ class TermSession(
      * 光有 startupCommand 不能当作附加成功，否则 UI 会撒谎。
      */
     val tmuxAttached: MutableStateFlow<Boolean?> = MutableStateFlow(null)
+    /** 用户通过管理面板结束交互的原因；不与附加失败混用，重连时重新确认。 */
+    val tmuxEndReason = MutableStateFlow<TmuxEndReason?>(null)
 
     /**
      * 本会话是**连不上**而结束的（DNS / 网络 / 认证 / 主机密钥被拒），而不是连上后正常退出。
@@ -157,10 +162,12 @@ class SessionManager(context: Context) {
         remoteTmuxId: String? = null,
         remoteTmuxName: String? = null,
         startupCommand: String? = null,
+        tmuxRecovery: TmuxRecovery? = remoteTmuxName?.let { TmuxRecovery(it) },
+        replaceFrom: TermSession? = null,
     ): TermSession {
         val baseTitle = baseTitleOf(host)
-        val initialCustom = carryFrom?.customTitle?.value
-        val mark = if (carryFrom != null) nextCopyMark(host.id) else null
+        val initialCustom = (replaceFrom ?: carryFrom)?.customTitle?.value
+        val mark = replaceFrom?.copyMark ?: if (carryFrom != null) nextCopyMark(host.id) else null
 
         // 基座 = 会话固有身份（tmux 会话名或 user@host）：动态标题被远端清空时回落到它。
         val titleBase = initialTitle ?: baseTitle
@@ -213,6 +220,7 @@ class SessionManager(context: Context) {
             copyMark = mark,
             remoteTmuxId = MutableStateFlow(remoteTmuxId),
             remoteTmuxName = MutableStateFlow(remoteTmuxName),
+            tmuxRecovery = MutableStateFlow(tmuxRecovery),
             lastReportedCwd = lastReportedCwd,
             startedAt = System.currentTimeMillis(),
         )
@@ -225,7 +233,8 @@ class SessionManager(context: Context) {
             }
 
             override fun sessionEnded(exitCode: Int): String =
-                if (exitCode == 0 && ts.tmuxAttached.value == true) {
+                if (exitCode == 0 && (ts.tmuxEndReason.value == TmuxEndReason.DETACHED ||
+                        (ts.tmuxEndReason.value == null && ts.tmuxAttached.value == true))) {
                     appContext.localized(R.string.term_left_tmux)
                 } else {
                     TerminalSession.statusText.sessionEnded(exitCode)
@@ -244,12 +253,54 @@ class SessionManager(context: Context) {
         controller.onAlert = { t, b -> TerminalAlerts.post(appContext, ts.id, ts.displayTitle.value, t, b) }
         // 有输出即刷新会话最后活动时间（供"更新时间"排序）。
         controller.onActivity = { ts.lastActivityAt = System.currentTimeMillis() }
-        _sessions.update { it + ts }
+        replaceFrom?.let { source ->
+            ts.composerDraft.value = source.composerDraft.value
+            ts.draftNeedsReview.value = source.draftNeedsReview.value
+            ts.negotiatedTerm.value = source.negotiatedTerm.value
+            synchronized(source.pendingDraftUploads) {
+                ts.pendingDraftUploads.addAll(source.pendingDraftUploads)
+                source.pendingDraftUploads.clear()
+            }
+        }
+        _sessions.update { list ->
+            if (replaceFrom != null && list.any { it.id == replaceFrom.id }) {
+                list.map { if (it.id == replaceFrom.id) ts else it }
+            } else list + ts
+        }
+        replaceFrom?.let(::finish)
         combine(title, customTitle) { _, _ -> Unit }
             .onEach { refreshDisplayTitles() }
             .launchIn(scope)
         refreshDisplayTitles()
         return ts
+    }
+
+    /** 替换传输，但保留用户会话状态与列表位置；tmux 身份只来自结构化恢复目标。 */
+    fun reconnect(source: TermSession, jumpHost: Host? = source.jumpHost): TermSession {
+        val target = source.tmuxRecovery.value
+        return open(
+            host = source.host,
+            jumpHost = jumpHost,
+            initialTitle = source.title.value,
+            remoteTmuxName = target?.name,
+            startupCommand = target?.let { Tmux.attachExistingCommand(it, source.negotiatedTerm.value) }
+                ?: source.startupCommand,
+            tmuxRecovery = target,
+            replaceFrom = source,
+        )
+    }
+
+    /** 上传在 IO 完成；在 Application 主线程作用域归属到会话，与重连替换串行化。 */
+    fun onUploadDone(taskId: String, hostId: String, remotePath: String) {
+        scope.launch {
+            val session = _sessions.value.firstOrNull {
+                it.host.id == hostId && it.pendingDraftUploads.remove(taskId)
+            } ?: return@launch
+            if (!session.alive.value) return@launch
+            val quoted = RemotePath.shellQuote(remotePath)
+            session.composerDraft.update { draft -> if (draft.isBlank()) quoted else "$draft $quoted" }
+            session.draftNeedsReview.value = true
+        }
     }
 
     /**
@@ -308,13 +359,18 @@ class SessionManager(context: Context) {
     }
 
     /**
-     * 断开/关闭远端 tmux 后，关联的 Moke 终端已回到普通 shell，不应继续标成“当前”。
+     * 显式分离/关闭远端 tmux 后不再标成“当前”；独立恢复目标仍供用户手动重连使用。
      *
      * 名称也要参与匹配：从选择器「新建」出来的终端在第一次刷新之前 `remoteTmuxId` 还是 null，
      * 只按 ID 清会漏掉它——于是面板已经把会话 detach 掉了，顶栏还挂着「当前 tmux 会话」。
      * 同一主机上 tmux 会话名是唯一的，按名匹配不会误伤别的会话。
      */
-    fun clearTmuxAssociation(hostId: String, remoteId: String, remoteName: String? = null) {
+    fun clearTmuxAssociation(
+        hostId: String,
+        remoteId: String,
+        remoteName: String? = null,
+        reason: TmuxEndReason,
+    ) {
         _sessions.value
             .filter {
                 it.host.id == hostId &&
@@ -322,8 +378,10 @@ class SessionManager(context: Context) {
                         (remoteName != null && it.remoteTmuxName.value == remoteName))
             }
             .forEach {
+                it.tmuxEndReason.value = reason
                 it.remoteTmuxId.value = null
                 it.remoteTmuxName.value = null
+                it.tmuxAttached.value = false
             }
     }
 
@@ -333,8 +391,9 @@ class SessionManager(context: Context) {
             .filter { it.host.id == hostId && it.remoteTmuxName.value != null }
             .forEach { local ->
                 val match = Tmux.resolveAssociation(
-                    local.remoteTmuxId.value,
-                    local.remoteTmuxName.value,
+                    // 断线后 server 可能重启并复用 ID；不能把恢复目标改成别的内容。
+                    local.remoteTmuxId.value.takeIf { local.alive.value && local.tmuxAttached.value == true },
+                    local.tmuxRecovery.value?.name,
                     remoteSessions,
                 )
                 if (match == null) {
@@ -343,6 +402,7 @@ class SessionManager(context: Context) {
                 } else {
                     local.remoteTmuxId.value = match.id
                     local.remoteTmuxName.value = match.name
+                    local.tmuxRecovery.value = local.tmuxRecovery.value?.copy(name = match.name)
                 }
             }
     }
@@ -350,8 +410,14 @@ class SessionManager(context: Context) {
     /** 面板重命名成功后同步所有指向该精确远端会话的本地终端。 */
     fun renameTmuxAssociation(hostId: String, remoteId: String, newName: String) {
         _sessions.value
-            .filter { it.host.id == hostId && it.remoteTmuxId.value == remoteId }
-            .forEach { it.remoteTmuxName.value = newName }
+            .filter {
+                it.host.id == hostId && it.remoteTmuxId.value == remoteId &&
+                    it.alive.value && it.tmuxAttached.value == true
+            }
+            .forEach {
+                it.remoteTmuxName.value = newName
+                it.tmuxRecovery.value = it.tmuxRecovery.value?.copy(name = newName)
+            }
     }
 
     /** 动态标题基座（OSC 上报前）：优先 `user@host`；缺 host 回落 displayName、缺 user 只用 host。 */
@@ -387,10 +453,14 @@ class SessionManager(context: Context) {
     /** 关闭并从列表移除（关传输幂等）。 */
     fun close(id: String) {
         val ts = get(id) ?: return
-        ts.forwards?.let { f -> scope.launch(Dispatchers.IO) { f.stopAll() } }
-        TerminalAlerts.cancel(appContext, id)
-        runCatching { ts.session.finishIfRunning() }
+        finish(ts)
         _sessions.update { list -> list.filterNot { it.id == id } }
         refreshDisplayTitles()
+    }
+
+    private fun finish(ts: TermSession) {
+        ts.forwards?.let { f -> scope.launch(Dispatchers.IO) { f.stopAll() } }
+        TerminalAlerts.cancel(appContext, ts.id)
+        runCatching { ts.session.finishIfRunning() }
     }
 }

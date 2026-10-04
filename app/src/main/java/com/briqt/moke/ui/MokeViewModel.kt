@@ -2,6 +2,8 @@ package com.briqt.moke.ui
 
 import android.app.Application
 import android.content.Intent
+import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,8 +19,10 @@ import com.briqt.moke.terminal.MokeTransferService
 import com.briqt.moke.terminal.TermSession
 import com.briqt.moke.terminal.Tmux
 import com.briqt.moke.terminal.TmuxDiscovery
+import com.briqt.moke.terminal.TmuxEndReason
 import com.briqt.moke.terminal.TmuxPhase
 import com.briqt.moke.terminal.TmuxSession
+import com.briqt.moke.terminal.TmuxRecovery
 import com.briqt.moke.data.FilesSort
 import com.briqt.moke.data.ExtraKeysLayout
 import com.briqt.moke.data.GroupBy
@@ -528,13 +532,28 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     private fun tmuxAction(
         ts: TermSession,
         cmd: String,
+        endsSession: Boolean = false,
+        endingId: String? = null,
+        endReason: TmuxEndReason? = null,
         onSuccess: () -> Unit = {},
     ) = viewModelScope.launch(Dispatchers.IO) {
         ts.tmuxMutex.withLock {
             val before = ts.tmuxState.value
             ts.tmuxState.value = before.copy(busy = true, message = null)
+            // 交互 EOF 可能先于侧通道结果到达；正文结束提示必须提前知道显式操作的原因。
+            val endingName = endingId?.let { tmuxNameOf(ts, it) }
+            val previousReasons = if (endReason == null) emptyList() else sessions.sessions.value
+                .filter {
+                    it.host.id == ts.host.id && (it.remoteTmuxId.value == endingId ||
+                        (endingName != null && it.remoteTmuxName.value == endingName))
+                }
+                .map { it to it.tmuxEndReason.value }
+            previousReasons.forEach { (session, _) -> session.tmuxEndReason.value = endReason }
             val out = runCatching { ts.transport.exec(Tmux.actionCmd(cmd)) }.getOrNull()
             val result = out?.let(Tmux::parseAction)
+            if (result?.ok != true) {
+                previousReasons.forEach { (session, reason) -> session.tmuxEndReason.value = reason }
+            }
             when {
                 out == null -> ts.tmuxState.value = before.copy(
                     busy = false,
@@ -550,7 +569,9 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 else -> {
                     onSuccess()
-                    refreshTmuxLocked(ts, retryUntilReady = false)
+                    // 分离/删除当前交互会话会结束它的 SSH 通道；成功后无需再用已结束的连接刷新。
+                    if (endsSession) ts.tmuxState.value = before.copy(busy = false, message = null)
+                    else refreshTmuxLocked(ts, retryUntilReady = false)
                 }
             }
         }
@@ -559,12 +580,22 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     fun tmuxRename(ts: TermSession, id: String, name: String) = tmuxAction(ts, Tmux.renameCmd(id, name)) {
         sessions.renameTmuxAssociation(ts.host.id, id, name)
     }
-    fun tmuxDetach(ts: TermSession, id: String) = tmuxAction(ts, Tmux.detachCmd(id)) {
-        sessions.clearTmuxAssociation(ts.host.id, id, tmuxNameOf(ts, id))
+    fun tmuxDetach(ts: TermSession, id: String) = tmuxAction(
+        ts, Tmux.detachCmd(id), endsSession = isCurrentTmux(ts, id),
+        endingId = id, endReason = TmuxEndReason.DETACHED,
+    ) {
+        sessions.clearTmuxAssociation(ts.host.id, id, tmuxNameOf(ts, id), TmuxEndReason.DETACHED)
     }
-    fun tmuxKill(ts: TermSession, id: String) = tmuxAction(ts, Tmux.killCmd(id)) {
-        sessions.clearTmuxAssociation(ts.host.id, id, tmuxNameOf(ts, id))
+    fun tmuxKill(ts: TermSession, id: String) = tmuxAction(
+        ts, Tmux.killCmd(id), endsSession = isCurrentTmux(ts, id),
+        endingId = id, endReason = TmuxEndReason.KILLED,
+    ) {
+        sessions.clearTmuxAssociation(ts.host.id, id, tmuxNameOf(ts, id), TmuxEndReason.KILLED)
     }
+
+    private fun isCurrentTmux(ts: TermSession, id: String): Boolean =
+        ts.remoteTmuxId.value == id ||
+            (ts.remoteTmuxName.value != null && ts.remoteTmuxName.value == tmuxNameOf(ts, id))
 
     /** 面板列表里该 ID 对应的会话名：本地关联可能还没拿到 ID，只能按名清（见 clearTmuxAssociation）。 */
     private fun tmuxNameOf(ts: TermSession, id: String): String? =
@@ -603,14 +634,16 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
             // 传输要等 View 测量后才 start，所以给若干次重试；数不出来一律当"无法确认"，不动状态。
             repeat(ATTACH_CONFIRM_ROUNDS) { round ->
                 delay(1000)
-                if (!session.alive.value) return@launch
+                if (!session.alive.value || session.tmuxEndReason.value != null) return@launch
                 val count = Tmux.parseClientCount(
-                    runCatching { session.transport.exec(Tmux.clientsCmd(name)) }.getOrNull()
+                    runCatching {
+                        session.transport.exec(Tmux.clientsCmd(session.tmuxRecovery.value ?: return@launch))
+                    }.getOrNull()
                 ) ?: return@repeat
                 // 命令是在会话还活着时发出的，结果却可能在它结束之后才回来。这种时候"0 个客户端"
                 // 说明不了任何事——detach 本身就会让计数归零——按它清关联会把「已离开 tmux，远端
                 // 会话仍在运行」退化成「会话已结束」（实测：detach 恰好撞上确认往返时就会这样）。
-                if (!session.alive.value) return@launch
+                if (!session.alive.value || session.tmuxEndReason.value != null) return@launch
                 if (count > 0) {
                     session.tmuxAttached.value = true
                     // 附上了才下发滚动绑定：让 tmux 现场判定翻页器/命令行（客户端侧判不了，见
@@ -632,22 +665,17 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-    /** 重连时保留协议级启动命令；tmux 专用会话不能退回成普通 shell。 */
+    /** 手动重连：恢复最新托管 tmux 身份，并原位替换本地会话状态。 */
     fun reconnectSession(source: TermSession): String {
         touchHost(source.host)
-        val session = sessions.open(
-            host = source.host,
-            jumpHost = resolveJump(source.host),
-            initialTitle = source.displayTitle.value,
-            remoteTmuxId = source.remoteTmuxId.value,
-            remoteTmuxName = source.remoteTmuxName.value,
-            startupCommand = source.startupCommand,
-        )
+        val session = sessions.reconnect(source, resolveJump(source.host))
         ensureSessionService()
-        // 重连同样要核对是否真的附上了。漏掉这一步，新会话的 tmuxAttached 恒为 null：
-        // detach 后提示会退化成「会话已结束」，而 tmux 真的没附上时顶栏还继续标着 tmux ——
-        // 正是首次附加时特意用侧通道消灭掉的那种「UI 撒谎」。
-        source.remoteTmuxName.value?.let { confirmTmuxAttach(session, it) }
+        val recovery = session.tmuxRecovery.value
+        if (recovery != null) {
+            confirmTmuxAttach(session, recovery.name)
+        } else if (source.host.persistence == SessionPersistence.TMUX) {
+            requestTmuxPickerWhenReady(session)
+        }
         return session.id
     }
 
@@ -700,6 +728,7 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
             initialTitle = "tmux · $name",
             remoteTmuxName = name,
             startupCommand = Tmux.attachOrCreateInPathCommand(name, path),
+            tmuxRecovery = TmuxRecovery(name, path),
         )
         touchHost(host)
         ensureSessionService()
@@ -752,7 +781,12 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     /** 拉起前台服务：退后台/关屏时保活会话（服务在会话归零时自行停止）。 */
     private fun ensureSessionService() {
         val ctx = getApplication<Application>()
-        runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, MokeSessionService::class.java)) }
+        try {
+            ContextCompat.startForegroundService(ctx, Intent(ctx, MokeSessionService::class.java))
+        } catch (e: Exception) {
+            Log.e("MokeViewModel", "Unable to start session keepalive", e)
+            Toast.makeText(ctx, ctx.localized(R.string.session_keepalive_failed), Toast.LENGTH_LONG).show()
+        }
     }
 
     fun closeSession(id: String) = sessions.close(id)
@@ -768,14 +802,9 @@ class MokeViewModel(app: Application) : AndroidViewModel(app) {
     val transfers = (app as MokeApplication).transfers.also { mgr ->
         // 记住的下载目录失效（被删/撤授权）时忘掉它，之后回到默认落点。
         mgr.onTreeUnusable = { viewModelScope.launch { settings.setDownloadTreeUri("") } }
-        // DONE 回调在 IO 线程；先记录在 Application 会话中，UI 销毁也不丢路径。
+        // DONE 来自 IO；草稿由 Application 作用域串行处理，ViewModel 销毁不取消结果归属。
         mgr.onUploadDone = { taskId, hostId, remotePath ->
-            val session = sessions.sessions.value.firstOrNull { it.host.id == hostId && it.pendingDraftUploads.remove(taskId) }
-            if (session?.alive?.value == true) {
-                val quoted = com.briqt.moke.terminal.sftp.RemotePath.shellQuote(remotePath)
-                session.composerDraft.update { draft -> if (draft.isBlank()) quoted else "$draft $quoted" }
-                session.draftNeedsReview.value = true
-            }
+            sessions.onUploadDone(taskId, hostId, remotePath)
             viewModelScope.launch {
                 val st = filesState.value
                 if (st.host?.id == hostId && st.path == com.briqt.moke.terminal.sftp.RemotePath.parent(remotePath)) {

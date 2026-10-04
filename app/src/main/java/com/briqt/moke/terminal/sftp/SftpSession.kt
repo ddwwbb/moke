@@ -67,9 +67,6 @@ class SftpSession(
         sftp?.let { return it }
         val connector = SshConnector(appContext) { notice = it }
         val c = connector.connect(host, jumpHost, heartbeat = true)
-        // 心跳间隔必须显式给：只设 KeepAliveProvider.HEARTBEAT 而不给间隔等于没开，
-        // 浏览连接会在用户看着列表发呆几分钟后被中间设备静默掐断（真机实测）。
-        runCatching { c.client.connection.keepAlive.keepAliveInterval = 30 }
         conn = c
         return c.client.newSFTPClient().also { sftp = it }
     }

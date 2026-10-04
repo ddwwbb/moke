@@ -39,6 +39,9 @@ class SshConnector(
         }
         return SSHClient(config).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
+            // SSHJ 在 onConnect() 按 isEnabled() 启动心跳线程；必须在 connect 前给间隔。
+            // 放在工厂里让目标与跳板两条长连接都生效，短连接仍保持默认关闭。
+            if (heartbeat) connection.keepAlive.keepAliveInterval = KEEP_ALIVE_INTERVAL_SECONDS
             if (awaitsTrust) transport.timeoutMs = TRUST_PROMPT_TIMEOUT_MS
             addHostKeyVerifier(MokeHostKeyVerifier(KnownHosts(appContext), appContext, onNotice))
         }
@@ -60,9 +63,9 @@ class SshConnector(
         try {
             if (jumpHost != null) {
                 val j = newClient(heartbeat, awaitsTrust(jumpHost))
+                jump = j
                 j.connect(jumpHost.host, jumpHost.port)
                 authenticate(j, jumpHost)
-                jump = j
                 client.connectVia(j.newDirectConnection(host.host, host.port))
             } else {
                 client.connect(host.host, host.port)
@@ -120,6 +123,7 @@ class SshConnector(
 
     companion object {
         const val CONNECT_TIMEOUT_MS = 15000
+        private const val KEEP_ALIVE_INTERVAL_SECONDS = 30
 
         /** 首连等用户确认指纹时的握手超时（略大于 HostKeyPrompt 自己的 120s）。 */
         private const val TRUST_PROMPT_TIMEOUT_MS = 150_000

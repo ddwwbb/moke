@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- 会话保活：PARTIAL WakeLock + WifiLock 防止息屏后 CPU/Wi-Fi 休眠断开 SSH -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 仅在用户点击终端设置中的入口时，请系统允许后台会话免受电池优化限制。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application

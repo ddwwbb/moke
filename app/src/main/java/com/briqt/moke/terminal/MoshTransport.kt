@@ -273,7 +273,6 @@ class MoshTransport(
         control?.takeIf { it.client.isConnected && it.client.isAuthenticated }?.let { return it.client }
         closeControl()
         val c = SshConnector(appContext).connect(host, jumpHost, heartbeat = true)
-        runCatching { c.client.connection.keepAlive.keepAliveInterval = 30 }
         control = c
         return c.client
     }

@@ -246,7 +246,6 @@ fun MokeApp(vm: MokeViewModel = viewModel()) {
                         onBack = { screen = Screen.Home },
                         onReconnect = {
                             val newId = vm.reconnectSession(ts)
-                            vm.closeSession(ts.id)
                             screen = Screen.Terminal(newId)
                         },
                         onClose = {

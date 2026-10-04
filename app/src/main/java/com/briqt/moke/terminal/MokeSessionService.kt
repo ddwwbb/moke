@@ -16,24 +16,24 @@ import com.briqt.moke.R
 import com.briqt.moke.localized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 /**
- * 前台服务：只要还有活动会话就常驻，借前台优先级让 app 退后台/关屏时进程（及 mosh 子进程）不被回收，
- * 从而会话保持存活。会话对象本身由 [MokeApplication.sessions]（Application 作用域）持有，本服务负责：
- *  - 常驻通知（展示活动会话数）；
- *  - 观察会话列表，归零即自行停止。
- *  - 持有 PARTIAL WakeLock + WifiLock：前台服务只保证进程不被杀，挡不住 CPU 休眠 / Wi-Fi 供电收敛——
- *    真机上退后台数十秒后内核挂起 SSH socket（ECONNABORTED「Software caused connection abort」）。
- *    Termux 同样持有 WakeLock 维持终端会话。
+ * 前台服务：有存活或正在建连的会话时提高后台优先级，并持有 CPU / Wi-Fi 锁供心跳和读线程使用。
+ * 会话对象由 [MokeApplication.sessions] 持有；已断线标签只保留终端内容，不再持锁耗电。
+ * 锁与前台服务不能保证永不断线，Doze、厂商限制及网络变化仍可能中断连接。
  */
 class MokeSessionService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var started = false
+    private var sessionObserver: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -42,44 +42,69 @@ class MokeSessionService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
-        // CPU 与 Wi-Fi 在息屏后继续可用——SSH 心跳/读线程依赖于此，见类注释。
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "moke:sessions")
-            .apply { setReferenceCounted(false); acquire() }
-        wifiLock = (getSystemService(WIFI_SERVICE) as WifiManager)
+            .apply { setReferenceCounted(false) }
+        wifiLock = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "moke:sessions-wifi")
-            .apply { setReferenceCounted(false); acquire() }
-        val sessions = (application as MokeApplication).sessions
-        // 会话数变化即刷新通知；归零即停服。
-        sessions.sessions.onEach { list ->
-            if (list.isEmpty()) {
-                stopForegroundCompat()
-                stopSelf()
-            } else if (started) {
-                notificationManager().notify(NOTIF_ID, buildNotification(list.size))
-            }
-        }.launchIn(scope)
+            .apply { setReferenceCounted(false) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val count = (application as MokeApplication).sessions.sessions.value.size
-        startForeground(NOTIF_ID, buildNotification(count.coerceAtLeast(1)))
+        val count = (application as MokeApplication).sessions.sessions.value.count { it.alive.value }
+        // 即使建连已失败，也先满足 startForegroundService 的前台启动要求，再立即停服。
+        startForeground(NOTIF_ID, buildNotification(count))
         started = true
-        if (count == 0) {
-            stopForegroundCompat()
-            stopSelf()
-        }
+        updateActiveSessions(count)
+        if (count > 0 && sessionObserver == null) observeSessions()
         // 无会话可续时不自动重启（连接无法凭空恢复）。
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        runCatching { wakeLock?.release() }
-        runCatching { wifiLock?.release() }
+        scope.cancel()
+        releaseLocks()
         wakeLock = null
         wifiLock = null
-        scope.cancel()
         super.onDestroy()
+    }
+
+    private fun observeSessions() {
+        val sessions = (application as MokeApplication).sessions
+        sessionObserver = scope.launch {
+            sessions.sessions.collectLatest { list ->
+                if (list.isEmpty()) {
+                    if (started) updateActiveSessions(0)
+                } else {
+                    // alive 从建连开始为 true，结束才转 false；列表不变时也必须观察断线。
+                    combine(list.map { it.alive }) { states -> states.count { it } }
+                        .collect { count -> if (started) updateActiveSessions(count) }
+                }
+            }
+        }
+    }
+
+    private fun updateActiveSessions(count: Int) {
+        if (count == 0) {
+            releaseLocks()
+            stopForegroundCompat()
+            started = false
+            stopSelf()
+        } else {
+            try {
+                wakeLock?.let { if (!it.isHeld) it.acquire() }
+                wifiLock?.let { if (!it.isHeld) it.acquire() }
+            } catch (e: RuntimeException) {
+                releaseLocks()
+                throw e
+            }
+            notificationManager().notify(NOTIF_ID, buildNotification(count))
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
+        runCatching { wifiLock?.let { if (it.isHeld) it.release() } }
     }
 
     private fun buildNotification(count: Int) =

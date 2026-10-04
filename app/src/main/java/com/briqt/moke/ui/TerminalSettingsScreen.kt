@@ -1,5 +1,10 @@
 package com.briqt.moke.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.KeyboardAlt
@@ -23,14 +29,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import com.briqt.moke.R
 import com.briqt.moke.data.KeyboardMode
 import com.briqt.moke.data.ScrollMode
@@ -61,6 +73,23 @@ fun TerminalSettingsScreen(
 ) {
     var kbDialog by remember { mutableStateOf(false) }
     var scrollDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val view = LocalView.current
+    val powerManager = remember(context) { requireNotNull(context.getSystemService(PowerManager::class.java)) }
+    var batteryExempt by remember(context) {
+        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
+    }
+    var batterySettingsFailed by remember { mutableStateOf(false) }
+    DisposableEffect(view, context) {
+        val lifecycle = view.findViewTreeLifecycleOwner()?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                batteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
@@ -116,6 +145,45 @@ fun TerminalSettingsScreen(
                 checked = keepScreenOn,
                 onCheckedChange = onKeepScreenOn,
             )
+            NavRow(
+                Icons.Filled.BatteryFull,
+                stringResource(R.string.menu_background_battery),
+                stringResource(
+                    if (batteryExempt) R.string.background_battery_exempt
+                    else R.string.background_battery_optimized,
+                ),
+                onClick = {
+                    // 仅用户主动点击才请求豁免；已有豁免时打开系统列表，方便用户调整。
+                    val intent = if (batteryExempt) {
+                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    } else {
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(Uri.parse("package:${context.packageName}"))
+                    }
+                    try {
+                        context.startActivity(intent)
+                        batterySettingsFailed = false
+                    } catch (_: ActivityNotFoundException) {
+                        batterySettingsFailed = true
+                    } catch (_: SecurityException) {
+                        batterySettingsFailed = true
+                    }
+                },
+            )
+            Text(
+                stringResource(R.string.background_battery_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            if (batterySettingsFailed) {
+                Text(
+                    stringResource(R.string.background_battery_settings_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
             SwitchRow(
                 icon = Icons.Filled.Shield,
                 title = stringResource(R.string.menu_confirm_close),

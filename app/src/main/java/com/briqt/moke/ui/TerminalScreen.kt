@@ -92,6 +92,7 @@ import com.briqt.moke.terminal.Modifiers
 import com.briqt.moke.terminal.TermSession
 import com.briqt.moke.terminal.TerminalController
 import com.briqt.moke.terminal.TerminalThemes
+import com.briqt.moke.terminal.TmuxEndReason
 import com.briqt.moke.terminal.TmuxPhase
 import com.briqt.moke.terminal.TmuxSession
 import com.briqt.moke.ui.theme.MokeDimens
@@ -156,6 +157,7 @@ fun TerminalScreen(
     // 只有侧通道确认过"确实附加上了"才敢说「已离开 tmux」；tmux 缺失/启动失败会回落普通 shell，
     // 那种情况必须说清没附上，否则 UI 在撒谎。
     val tmuxAttached by ts.tmuxAttached.collectAsState()
+    val tmuxEndReason by ts.tmuxEndReason.collectAsState()
     val tmuxRoute = if (ts.jumpHost != null) {
         stringResource(R.string.tmux_via_jump, ts.jumpHost.displayName)
     } else {
@@ -349,7 +351,8 @@ fun TerminalScreen(
                 deviceName = ts.host.displayName.ifBlank { stringResource(R.string.unnamed) },
                 useMosh = ts.host.useMosh,
                 alive = alive,
-                tmuxDetached = remoteTmuxName != null && tmuxAttached == true,
+                tmuxDetached = tmuxEndReason == TmuxEndReason.DETACHED ||
+                    (tmuxEndReason == null && remoteTmuxName != null && tmuxAttached == true),
                 latencyMs = latency,
                 showLatency = !ts.host.useMosh,
                 fontSizeSp = fontSizeSp,
@@ -485,6 +488,8 @@ fun TerminalScreen(
                             stringResource(
                                 when {
                                     connectFailed -> R.string.session_connect_failed
+                                    tmuxEndReason == TmuxEndReason.DETACHED -> R.string.tmux_left
+                                    tmuxEndReason == TmuxEndReason.KILLED -> R.string.session_ended
                                     remoteTmuxName != null && tmuxAttached == true -> R.string.tmux_left
                                     remoteTmuxName == null && tmuxAttached == false ->
                                         R.string.tmux_attach_unconfirmed

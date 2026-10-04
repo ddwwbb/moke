@@ -238,6 +238,7 @@
     <string name="notif_channel_name">会话保持</string>
     <string name="notif_channel_desc">在后台保持活动的 SSH / mosh 会话</string>
     <string name="notif_sessions_active">%1$d 个会话在后台保持</string>
+    <string name="session_keepalive_failed">无法启动后台会话保活，退后台可能断线。</string>
     <string name="notif_transfer_channel_name">文件传输</string>
     <string name="notif_transfer_channel_desc">在后台继续上传与下载</string>
     <string name="notif_transfer_title">正在传输文件</string>
@@ -356,6 +357,11 @@
     <string name="menu_tmux_scroll_setup_sub">附加后为该会话开启鼠标模式并绑定滚轮：翻页器翻页、命令行滚历史。会在远端 tmux server 上加一条 root 键表绑定。</string>
     <string name="menu_keep_screen_on">终端内保持屏幕常亮</string>
     <string name="menu_keep_screen_on_sub">打开终端时不自动息屏，较耗电</string>
+    <string name="menu_background_battery">后台会话电池设置</string>
+    <string name="background_battery_exempt">电池优化：已豁免 · 点击打开系统设置</string>
+    <string name="background_battery_optimized">电池优化：未豁免 · 点击请求系统豁免</string>
+    <string name="background_battery_help">存活或正在建连的会话会保持 CPU 与 Wi-Fi 唤醒并发送 SSH 心跳，较耗电。豁免可改善息屏连接，但网络变化和厂商限制仍可能导致断线；部分设备还需在系统设置中允许后台活动或自启动。</string>
+    <string name="background_battery_settings_failed">无法打开系统电池设置，请手动前往「系统设置 → 应用 → Moke → 电池」调整后台限制。</string>
     <string name="host_persistence">会话持久化</string>
     <string name="persistence_none">无</string>
     <string name="persistence_tmux">tmux（连接即进入）</string>

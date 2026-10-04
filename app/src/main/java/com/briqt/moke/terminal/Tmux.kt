@@ -16,6 +16,11 @@ data class TmuxSession(
     val created: Long,   // epoch 秒
 )
 
+/** 应用托管的恢复目标；工作区目录是身份约束，不能在重连时降级成普通 tmux。 */
+data class TmuxRecovery(val name: String, val projectPath: String? = null)
+
+enum class TmuxEndReason { DETACHED, KILLED }
+
 enum class TmuxPhase {
     IDLE,
     CHECKING,
@@ -211,6 +216,34 @@ object Tmux {
             "echo \"moke: tmux exited (\$ec)\"; exec \${SHELL:-sh} -l' sh ${q(name)}"
     }
 
+    /** 断线恢复只附加已有的精确名称；缺失时明确报错，绝不新建空会话冒充恢复。 */
+    fun attachExistingCommand(recovery: TmuxRecovery, term: String? = null): String {
+        val candidates = (listOfNotNull(term?.takeIf { TERM_SAFE.matches(it) }) + TERM_CANDIDATES)
+            .distinct().joinToString(" ")
+        val projectCheck = if (recovery.projectPath != null) {
+            "case \"\$2\" in /*) ;; *) echo \"moke: project path must be absolute\"; exec \${SHELL:-sh} -l;; esac; " +
+                "[ -d \"\$2\" ] || { echo \"moke: project directory not found: \$2\"; exec \${SHELL:-sh} -l; }; " +
+                "saved=\$(tmux show-options -qv -t \"\$session\" @moke_project_path); " +
+                "[ \"\$saved\" = \"\$2\" ] || " +
+                "{ echo \"moke: project session name conflicts with another directory\"; exec \${SHELL:-sh} -l; }; "
+        } else ""
+        val pathArg = recovery.projectPath?.let { " ${q(workspacePath(it))}" }.orEmpty()
+        return "sh -c '" +
+            "for t in $candidates; do " +
+            "if command -v tput >/dev/null 2>&1; then " +
+            "TERM=\"\$t\" tput clear >/dev/null 2>&1 && { TERM=\$t; export TERM; break; }; " +
+            "elif infocmp \"\$t\" >/dev/null 2>&1; then TERM=\$t; export TERM; break; fi; done; " +
+            "command -v tmux >/dev/null 2>&1 || " +
+            "{ echo \"moke: tmux not found on this host\"; exec \${SHELL:-sh} -l; }; " +
+            "session=\$(tmux display-message -p -t \"=\$1:\" \"#{session_id}\" 2>/dev/null); " +
+            "[ -n \"\$session\" ] || " +
+            "{ echo \"moke: previous tmux session not found: \$1\"; exec \${SHELL:-sh} -l; }; " +
+            projectCheck +
+            "tmux -u attach-session -t \"\$session\"; " +
+            "ec=\$?; [ \$ec -eq 0 ] && exit 0; " +
+            "echo \"moke: tmux exited (\$ec)\"; exec \${SHELL:-sh} -l' sh ${q(recovery.name)}$pathArg"
+    }
+
     /** 去掉不改变目录身份的尾随斜线；空配置仍保持空，绝不意外打开根目录。 */
     private fun workspacePath(path: String): String =
         if (path.startsWith('/')) path.trimEnd('/').ifEmpty { "/" } else path
@@ -251,7 +284,7 @@ object Tmux {
             "command -v tmux >/dev/null 2>&1 || " +
             "{ echo \"moke: tmux not found on this host\"; exec \${SHELL:-sh} -l; }; " +
             "if tmux has-session -t \"=\$1\" 2>/dev/null; then " +
-            "session=\$(tmux display-message -p -t \"=\$1\" \"#{session_id}\"); " +
+            "session=\$(tmux display-message -p -t \"=\$1:\" \"#{session_id}\" 2>/dev/null); " +
             "saved=\$(tmux show-options -qv -t \"\$session\" @moke_project_path); " +
             "[ -n \"\$session\" ] && [ \"\$saved\" = \"\$2\" ] || " +
             "{ echo \"moke: project session name conflicts with another directory\"; exec \${SHELL:-sh} -l; }; " +
@@ -291,11 +324,20 @@ object Tmux {
     }
 
     /**
-     * 附加确认：数一下该会话当前的 tmux 客户端。attach 命令发出不等于附加成功（TERM 不可用、
-     * tmux 启动失败都会回落登录壳），不核对就会出现「UI 说在 tmux 里、其实是普通 shell」。
+     * 附加确认只统计精确名称，项目还须匹配目录身份；不能借前缀会话或冲突工作区的客户端数确认成功。
+     * attach 命令发出不等于附加成功，tmux 缺失/启动失败会回落登录壳。
      */
-    fun clientsCmd(name: String) =
-        "tmux -u list-clients -t ${q(name)} -F 'c' 2>/dev/null | grep -c '^c' || true"
+    fun clientsCmd(recovery: TmuxRecovery): String {
+        val projectCheck = recovery.projectPath?.let { path ->
+            "[ -d ${q(workspacePath(path))} ] && " +
+                "[ \"\$(tmux show-options -qv -t \"\$session\" @moke_project_path)\" = ${q(workspacePath(path))} ] || " +
+                "{ printf '0\\n'; exit 0; }; "
+        }.orEmpty()
+        return "session=\$(tmux display-message -p -t ${q("=${recovery.name}:")} '#{session_id}' 2>/dev/null); " +
+            "[ -n \"\$session\" ] || { printf '0\\n'; exit 0; }; " +
+            projectCheck +
+            "tmux -u list-clients -t \"\$session\" -F 'c' 2>/dev/null | grep -c '^c' || true"
+    }
 
     /**
      * 把「当前前台是翻页器还是命令行」这个判定交给 tmux（附加成功后经侧通道下发一次）。

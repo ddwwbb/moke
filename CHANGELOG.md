@@ -15,6 +15,12 @@
 - The About page shows only the actual check status or error, without an appended "tap to retry" hint; the check button stays available.
 - 应用内切换语言时清除旧语言的更新检查结果，保留预览版偏好；再次检查使用当前语言。
 - Switching the in-app language clears the stale update result in the old language while keeping the pre-release preference; the next check uses the current language.
+- 修复建连前 tmux 探测泄漏 SSH 执行计数：交互结束后释放连接，在途管理命令仍可完成，结束态输入不再提交到已关闭的写队列。
+- Fixed SSH execution-count leaks from pre-connection tmux probes: interactive EOF releases the connection after in-flight management commands finish, and ended sessions no longer submit input to the closed write queue.
+- tmux 重连身份不再被已断线会话的复用 ID 重命名覆盖；附加确认只匹配精确名称，并校验项目目录，缺失目标或冲突工作区不会借其他客户端误报成功。
+- tmux recovery identity is no longer overwritten by renaming a reused ID from a disconnected session. Attachment checks match exact names and project directories, so missing targets and conflicting workspaces cannot borrow another client's attachment state.
+- 管理面板分离和删除使用独立结束原因，不再显示「未能附加到 tmux」；SSH smoke 每轮使用唯一远端会话与输出标记，并通过独立连接清理本轮资源。
+- Detach and kill actions have distinct end reasons instead of displaying an attachment failure. Each SSH smoke run uses a unique remote session and output marker, with cleanup through an independent connection.
 
 ## [0.9]
 
