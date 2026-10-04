@@ -12,8 +12,8 @@ android {
         applicationId = "com.briqt.moke"
         minSdk = 24
         targetSdk = 35
-        versionCode = 48
-        versionName = "0.9"
+        versionCode = 49
+        versionName = "0.9.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
         // mosh native 目前仅提供 arm64-v8a 预编译（scripts/build-mosh-native.sh）；其它 ABI 后续补齐。
@@ -25,7 +25,7 @@ android {
         // 本地无环境变量时不配置，release 构建回退到 debug 签名，方便本地出包。
         create("release") {
             val ksPath = System.getenv("MOKE_KEYSTORE")
-            if (!ksPath.isNullOrBlank() && file(ksPath).exists()) {
+            if (!ksPath.isNullOrBlank() && file(ksPath).exists() && file(ksPath).length() > 0L) {
                 storeFile = file(ksPath)
                 storePassword = System.getenv("MOKE_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("MOKE_KEY_ALIAS")
@@ -46,7 +46,7 @@ android {
                 "proguard-rules.pro"
             )
             // 有稳定 keystore 用它（各版本签名一致，可升级安装）；否则回退 debug（本地）。
-            signingConfig = if (!System.getenv("MOKE_KEYSTORE").isNullOrBlank())
+            signingConfig = if (signingConfigs.getByName("release").storeFile != null)
                 signingConfigs.getByName("release")
             else
                 signingConfigs.getByName("debug")

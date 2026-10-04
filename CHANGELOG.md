@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.9.3]
+
 ### 新增 / Added
 - 恢复上游的应用内检查更新、包含预览版开关与静默新版提示，但仅查询 `ddwwbb/moke` 的发行版。新版本入口打开对应发行页，不自动下载或安装；设置开关跨重启保留，成功的启动检查在 6 小时内不重复请求。
 - Restored the upstream in-app update check, pre-release toggle and silent new-release dot, querying only `ddwwbb/moke` releases. The entry point opens the matching release page without auto-download or install; the toggle persists across restarts, and a successful startup check is not repeated within six hours.
